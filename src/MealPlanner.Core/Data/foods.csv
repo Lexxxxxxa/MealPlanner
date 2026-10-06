@@ -1,0 +1,44 @@
+Name,Category,KcalPer100,ProteinPer100,FatPer100,CarbsPer100,PricePer100,MaxGrams
+Oat flakes,Grains,372,13.5,7,59,0.15,150
+White rice (dry),Grains,360,7,0.6,79,0.25,150
+Pasta (dry),Grains,355,12.5,1.5,72,0.20,150
+Wholemeal bread,Grains,215,8,1.5,41,0.30,250
+Muesli,Grains,360,10,6,64,0.40,100
+Corn flakes,Grains,357,7,0.9,84,0.35,80
+Potatoes,Vegetables,77,2,0.1,17,0.12,500
+Lentils (dry),Legumes,340,25,1.5,50,0.35,120
+Chickpeas (canned),Legumes,120,7,2.5,16,0.15,300
+Kidney beans (canned),Legumes,100,6.5,0.5,15,0.15,300
+Green peas (frozen),Vegetables,81,5.4,0.4,14,0.20,250
+Chicken breast,Meat,110,23,1.2,0,0.80,300
+Turkey breast,Meat,105,24,1,0,0.90,300
+Minced beef,Meat,250,17,20,0,0.90,200
+Eggs,Eggs and dairy,143,12.6,9.5,0.7,0.35,250
+Low-fat quark,Eggs and dairy,67,12,0.3,4,0.20,400
+Milk 1.5%,Eggs and dairy,47,3.4,1.5,4.9,0.10,500
+Natural yogurt,Eggs and dairy,61,3.5,3.3,4.7,0.15,400
+Gouda cheese,Eggs and dairy,356,25,28,2,1.00,100
+Mozzarella,Eggs and dairy,254,18,19,2,0.70,125
+Butter,Fats,717,0.9,81,0.1,1.00,30
+Sunflower oil,Fats,884,0,100,0,0.20,40
+Olive oil,Fats,884,0,100,0,0.80,40
+Tuna (canned),Fish,116,26,1,0,1.00,150
+Salmon,Fish,208,20,13,0,1.50,200
+Cod fillet,Fish,82,18,0.7,0,1.00,250
+Tofu,Legumes,120,13,7,2,0.50,250
+Hummus,Legumes,166,8,10,14,0.45,150
+Peanut butter,Nuts,588,25,50,20,0.60,50
+Almonds,Nuts,579,21,50,22,1.20,50
+Banana,Fruit,89,1.1,0.3,23,0.20,300
+Apple,Fruit,52,0.3,0.2,14,0.25,300
+Orange,Fruit,47,0.9,0.1,12,0.25,300
+Carrot,Vegetables,41,0.9,0.2,10,0.10,300
+Broccoli,Vegetables,34,2.8,0.4,7,0.30,300
+Tomato,Vegetables,18,0.9,0.2,3.9,0.25,300
+Cucumber,Vegetables,15,0.7,0.1,3.6,0.15,300
+Spinach,Vegetables,23,2.9,0.4,3.6,0.35,200
+Onion,Vegetables,40,1.1,0.1,9,0.10,150
+White cabbage,Vegetables,25,1.3,0.1,6,0.10,300
+Bell pepper,Vegetables,31,1,0.3,6,0.40,250
+Sugar,Sweets,400,0,0,100,0.10,50
+Honey,Sweets,304,0.3,0,82,0.60,40
