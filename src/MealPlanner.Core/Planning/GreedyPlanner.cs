@@ -5,14 +5,18 @@ namespace MealPlanner.Core.Planning;
 
 /// <summary>
 /// Greedy algorithm: at each step adds a portion of <see cref="StepGrams"/> of the product
-/// with the best ratio of nutrient deficit closure to cost,
-/// without violating upper bounds; complexity is O(S*n), where S is the number of steps and n the number of products
+/// with the best ratio of weighted deficit closure to (cost + energy penalty),
+/// without violating upper bounds; the weight of each nutrient equals its current relative deficit,
+/// the energy penalty (<see cref="EnergyPenalty"/>) prevents cheap empty calories
+/// from exhausting the daily limit before protein is reached; complexity is O(S*n), where S is the number of steps and n the number of products
 /// </summary>
 public class GreedyPlanner : IMenuPlanner
 {
     public string Name => "Greedy";
 
     public double StepGrams { get; init; } = 25;
+
+    public double EnergyPenalty { get; init; } = 1.0;
 
     public MenuPlan Plan(IReadOnlyList<Food> foods, NutrientTargets targets)
     {
@@ -38,11 +42,12 @@ public class GreedyPlanner : IMenuPlanner
                 for (int k = 0; k < NutrientTargets.Dimensions; k++)
                 {
                     double deficit = Math.Max(0, targets.Min(k) - totals[k]);
-                    gain += Math.Min(deficit, add[k]) / targets.Min(k);
+                    double weight = deficit / targets.Min(k);
+                    gain += Math.Min(deficit, add[k]) / targets.Min(k) * weight;
                 }
                 if (gain <= 0) continue;
 
-                double score = gain / (food.CostFor(StepGrams) + 1e-9);
+                double score = gain / (food.CostFor(StepGrams) + EnergyPenalty * add.Kcal / 1000.0 + 1e-9);
                 if (score > bestScore)
                 {
                     bestScore = score;
