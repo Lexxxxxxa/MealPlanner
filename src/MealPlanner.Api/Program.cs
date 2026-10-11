@@ -22,5 +22,6 @@ app.UseSwaggerUI();
 app.MapGet("/", () => Results.Redirect("/swagger"));
 app.MapFoodEndpoints();
 app.MapRecipeEndpoints();
+app.MapMenuEndpoints();
 
 app.Run();
