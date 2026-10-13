@@ -13,7 +13,7 @@ public class PlannerTests
     public void SeedCatalog_ContainsFoods()
     {
         var foods = FoodCatalog.LoadSeed();
-        Assert.True(foods.Count >= 40);
+        Assert.True(foods.Count >= 55);
         Assert.All(foods, f => Assert.True(f.PricePer100 > 0 && f.MaxGrams > 0));
     }
 
@@ -48,7 +48,7 @@ public class PlannerTests
     }
 
     [Theory]
-    [InlineData(43)]
+    [InlineData(59)]
     [InlineData(100)]
     [InlineData(200)]
     public void Lp_IsNotMoreExpensiveThanGreedy(int count)

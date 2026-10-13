@@ -10,7 +10,7 @@
 |---|---|
 | `src/MealPlanner.Core` | Моделі, алгоритми (`GreedyPlanner`, `LpPlanner`, `SimplexSolver`), каталог продуктів (`Data/foods.csv`) |
 | `src/MealPlanner.Api` | ASP.NET Core Web API (minimal API), EF Core + SQLite, Swagger |
-| `src/MealPlanner.Benchmark` | Консольний експеримент: порівняння алгоритмів на наборах із 43–1000 продуктів |
+| `src/MealPlanner.Benchmark` | Консольний експеримент: порівняння алгоритмів на наборах із 59–1000 продуктів |
 | `tests/MealPlanner.Tests` | Модульні тести xUnit |
 
 ## Запуск
