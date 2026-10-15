@@ -68,7 +68,7 @@ public class WeightedCoverageRecommender : IDishRecommender
 /// </summary>
 public class SmartRecommender : IDishRecommender
 {
-    public string Name => "Smart";
+    public string Name { get; init; } = "Smart";
 
     public double CostPenalty { get; init; } = 0.05;
 
