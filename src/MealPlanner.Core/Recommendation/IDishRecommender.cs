@@ -2,7 +2,7 @@ using MealPlanner.Core.Models;
 
 namespace MealPlanner.Core.Recommendation;
 
-public record Recommendation(Dish Dish, double Score, CoverageInfo Coverage);
+public record DishRecommendation(Dish Dish, double Score, CoverageInfo Coverage);
 
 /// <summary>
 /// Request context: target calories of a portion (optional)
@@ -13,7 +13,7 @@ public interface IDishRecommender
 {
     string Name { get; }
 
-    IReadOnlyList<Recommendation> Recommend(
+    IReadOnlyList<DishRecommendation> Recommend(
         IReadOnlyList<Dish> dishes,
         IReadOnlyDictionary<int, double> pantry,
         RecommendationContext context,

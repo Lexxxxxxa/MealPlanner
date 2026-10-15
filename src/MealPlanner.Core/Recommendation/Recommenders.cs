@@ -12,13 +12,13 @@ public class RandomRecommender : IDishRecommender
 
     public string Name => "Random";
 
-    public IReadOnlyList<Recommendation> Recommend(
+    public IReadOnlyList<DishRecommendation> Recommend(
         IReadOnlyList<Dish> dishes, IReadOnlyDictionary<int, double> pantry,
         RecommendationContext context, int top)
     {
         var rnd = new Random(_seed);
         return dishes
-            .Select(d => new Recommendation(d, rnd.NextDouble(), CoverageInfo.Analyze(d, pantry)))
+            .Select(d => new DishRecommendation(d, rnd.NextDouble(), CoverageInfo.Analyze(d, pantry)))
             .OrderByDescending(r => r.Score)
             .Take(top)
             .ToList();
@@ -32,11 +32,11 @@ public class BinaryCoverageRecommender : IDishRecommender
 {
     public string Name => "BinaryCoverage";
 
-    public IReadOnlyList<Recommendation> Recommend(
+    public IReadOnlyList<DishRecommendation> Recommend(
         IReadOnlyList<Dish> dishes, IReadOnlyDictionary<int, double> pantry,
         RecommendationContext context, int top) =>
         dishes
-            .Select(d => { var c = CoverageInfo.Analyze(d, pantry); return new Recommendation(d, c.IngredientShare, c); })
+            .Select(d => { var c = CoverageInfo.Analyze(d, pantry); return new DishRecommendation(d, c.IngredientShare, c); })
             .OrderByDescending(r => r.Score)
             .ThenBy(r => r.Dish.Name, StringComparer.Ordinal)
             .Take(top)
@@ -50,11 +50,11 @@ public class WeightedCoverageRecommender : IDishRecommender
 {
     public string Name => "WeightedCoverage";
 
-    public IReadOnlyList<Recommendation> Recommend(
+    public IReadOnlyList<DishRecommendation> Recommend(
         IReadOnlyList<Dish> dishes, IReadOnlyDictionary<int, double> pantry,
         RecommendationContext context, int top) =>
         dishes
-            .Select(d => { var c = CoverageInfo.Analyze(d, pantry); return new Recommendation(d, c.GramShare, c); })
+            .Select(d => { var c = CoverageInfo.Analyze(d, pantry); return new DishRecommendation(d, c.GramShare, c); })
             .OrderByDescending(r => r.Score)
             .ThenBy(r => r.Coverage.MissingCost)
             .Take(top)
@@ -74,7 +74,7 @@ public class SmartRecommender : IDishRecommender
 
     public double CalorieWeight { get; init; } = 0.5;
 
-    public IReadOnlyList<Recommendation> Recommend(
+    public IReadOnlyList<DishRecommendation> Recommend(
         IReadOnlyList<Dish> dishes, IReadOnlyDictionary<int, double> pantry,
         RecommendationContext context, int top)
     {
@@ -102,7 +102,7 @@ public class SmartRecommender : IDishRecommender
                 }
 
                 double score = cov * fit - CostPenalty * c.MissingCost;
-                return new Recommendation(d, score, c);
+                return new DishRecommendation(d, score, c);
             })
             .OrderByDescending(r => r.Score)
             .ThenBy(r => r.Dish.Name, StringComparer.Ordinal)
