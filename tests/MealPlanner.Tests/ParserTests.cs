@@ -58,3 +58,35 @@ public class ParserTests
         Assert.Equal(expected, FoodMatcher.Find(query, Foods)?.Name);
     }
 }
+
+public class TemplateDishTests
+{
+    [Fact]
+    public void AllTemplateDishesParse()
+    {
+        var foods = MealPlanner.Core.Data.FoodCatalog.LoadSeed();
+        var built = MealPlanner.Core.Data.TemplateDishes.Build(foods);
+
+        Assert.Equal(MealPlanner.Core.Data.TemplateDishes.Definitions.Length, built.Count);
+    }
+
+    [Fact]
+    public void ParseItems_ReadsPantryList()
+    {
+        var foods = MealPlanner.Core.Data.FoodCatalog.LoadSeed();
+        var r = DishParser.ParseItems("курица 500, рис 0,3 кг", foods);
+
+        Assert.Empty(r.Errors);
+        Assert.Empty(r.UnknownFoods);
+        Assert.Equal(2, r.Items.Count);
+        Assert.Equal(300, r.Items[1].Grams, 6);
+    }
+
+    [Fact]
+    public void TargetsForKcal_MatchDefaultAt2000()
+    {
+        var t = MealPlanner.Core.Models.NutrientTargets.ForKcal(2000);
+        Assert.Equal(75, t.ProteinMin, 6);
+        Assert.Equal(150, t.ProteinMax, 6);
+    }
+}

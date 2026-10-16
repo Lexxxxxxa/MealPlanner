@@ -15,6 +15,12 @@ public record NutrientTargets(
         FatMin: 55, FatMax: 80,
         CarbsMin: 250, CarbsMax: 330);
 
+    public static NutrientTargets ForKcal(double kcal) => new(
+        KcalMin: kcal * 0.95, KcalMax: kcal * 1.05,
+        ProteinMin: kcal * 0.15 / 4, ProteinMax: kcal * 0.30 / 4,
+        FatMin: kcal * 0.25 / 9, FatMax: kcal * 0.35 / 9,
+        CarbsMin: kcal * 0.45 / 4, CarbsMax: kcal * 0.60 / 4);
+
     public double Min(int index) => index switch
     {
         0 => KcalMin, 1 => ProteinMin, 2 => FatMin, 3 => CarbsMin,

@@ -4,6 +4,8 @@ using MealPlanner.Core.Models;
 
 namespace MealPlanner.Core.Parsing;
 
+public record ParsedItems(List<PantryItem> Items, List<string> UnknownFoods, List<string> Errors);
+
 public record ParsedDish(string Name, int Servings, List<DishIngredient> Ingredients, List<string> UnknownFoods, List<string> Errors)
 {
     public bool IsValid => Errors.Count == 0 && UnknownFoods.Count == 0 && Ingredients.Count > 0;
@@ -50,7 +52,24 @@ public static class DishParser
         }
         if (servings < 1) errors.Add("Количество порций должно быть не меньше 1");
 
-        foreach (var raw in Regex.Split(rest, @";|\n|,(?!\d)"))
+        var items = ParseItems(rest, foods);
+        ingredients.AddRange(items.Items.Select(i => new DishIngredient(i.Food, i.Grams)));
+        unknown.AddRange(items.UnknownFoods);
+        errors.AddRange(items.Errors);
+
+        if (ingredients.Count == 0 && errors.Count == 0 && unknown.Count == 0)
+            errors.Add("В блюде нет ингредиентов");
+
+        return new ParsedDish(name, Math.Max(1, servings), ingredients, unknown, errors);
+    }
+
+    public static ParsedItems ParseItems(string text, IReadOnlyList<Food> foods)
+    {
+        var items = new List<PantryItem>();
+        var unknown = new List<string>();
+        var errors = new List<string>();
+
+        foreach (var raw in Regex.Split(text, @";|\n|,(?!\d)"))
         {
             string item = raw.Trim();
             if (item.Length == 0) continue;
@@ -79,13 +98,9 @@ public static class DishParser
                 errors.Add($"Неизвестная единица измерения «{unit}» для «{foodName}»");
                 continue;
             }
-            ingredients.Add(new DishIngredient(food, grams.Value));
+            items.Add(new PantryItem(food, grams.Value));
         }
-
-        if (ingredients.Count == 0 && errors.Count == 0 && unknown.Count == 0)
-            errors.Add("В блюде нет ингредиентов");
-
-        return new ParsedDish(name, Math.Max(1, servings), ingredients, unknown, errors);
+        return new ParsedItems(items, unknown, errors);
     }
 
     public static double? ToGrams(double qty, string unit, Food food)
