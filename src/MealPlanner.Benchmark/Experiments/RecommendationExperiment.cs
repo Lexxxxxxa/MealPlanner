@@ -29,7 +29,9 @@ public static class RecommendationExperiment
             new WeightedCoverageRecommender(),
             new SmartRecommender { Name = "Smart-noKcal", CalorieWeight = 0 },
             new SmartRecommender { Name = "Smart-noCostPenalty", CostPenalty = 0 },
-            new SmartRecommender()
+            new SmartRecommender { Name = "Smart-w0.25", CalorieWeight = 0.25 },
+            new SmartRecommender(),
+            new SmartRecommender { Name = "Smart-w1.0", CalorieWeight = 1.0 }
         };
 
         var raw = new StringBuilder("household,method,precision_at_k,hit_at_1,near_cookable_at_k,missing_cost,kcal_dev,time_ms\n");
