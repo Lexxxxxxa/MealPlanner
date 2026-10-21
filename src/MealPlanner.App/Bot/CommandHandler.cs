@@ -293,8 +293,11 @@ public class CommandHandler
             }
             entry.Grams = replace ? item.Grams : entry.Grams + item.Grams;
         }
-        foreach (var e in entries.Where(e => e.Grams <= 0 && _db.Entry(e).State != EntityState.Added).ToList())
-            _db.Pantry.Remove(e);
+        foreach (var stale in entries.Where(x => x.Grams <= 0).ToList())
+        {
+            if (_db.Entry(stale).State == EntityState.Added) _db.Entry(stale).State = EntityState.Detached;
+            else _db.Pantry.Remove(stale);
+        }
         await _db.SaveChangesAsync(ct);
 
         string summary = string.Join(", ", parsed.Items.Select(i => $"{i.Food.Name} {i.Grams:F0} г"));
