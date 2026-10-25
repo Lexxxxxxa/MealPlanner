@@ -37,7 +37,7 @@ using var cts = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 
 bot.StartReceiving(
-    updateHandler: async (client, update, ct) =>
+    async (client, update, ct) =>
     {
         var message = update.Message;
         if (update.Type != UpdateType.Message || message?.Text is null || message.From is null) return;
@@ -67,13 +67,13 @@ bot.StartReceiving(
         if (reply.Length > 4000) reply = reply[..4000] + "…";
         await client.SendTextMessageAsync(message.Chat.Id, reply, cancellationToken: ct);
     },
-    pollingErrorHandler: (client, ex, ct) =>
+    (client, ex, ct) =>
     {
         Console.Error.WriteLine($"Ошибка опроса Telegram: {ex.Message}");
         return Task.CompletedTask;
     },
-    receiverOptions: new ReceiverOptions { AllowedUpdates = new[] { UpdateType.Message } },
-    cancellationToken: cts.Token);
+    new ReceiverOptions { AllowedUpdates = new[] { UpdateType.Message } },
+    cts.Token);
 
 try { await Task.Delay(Timeout.Infinite, cts.Token); }
 catch (OperationCanceledException) { }
