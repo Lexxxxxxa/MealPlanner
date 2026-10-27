@@ -28,7 +28,7 @@ using (var db = new AppDbContext(options))
 }
 
 var bot = new TelegramBotClient(token);
-var me = await bot.GetMeAsync();
+var me = await bot.GetMe();
 Console.WriteLine($"Бот запущено: @{me.Username}. Ctrl+C — зупинити.");
 if (allowed.Count == 0)
     Console.WriteLine("УВАГА: ALLOWED_USER_IDS не задано — ботом може користуватися будь-хто, хто знає його ім'я.");
@@ -45,7 +45,7 @@ bot.StartReceiving(
         long userId = message.From.Id;
         if (allowed.Count > 0 && !allowed.Contains(userId))
         {
-            await client.SendTextMessageAsync(message.Chat.Id,
+            await client.SendMessage(message.Chat.Id,
                 $"Доступ закрыт. Ваш Telegram-ID: {userId}", cancellationToken: ct);
             return;
         }
@@ -65,7 +65,7 @@ bot.StartReceiving(
         }
 
         if (reply.Length > 4000) reply = reply[..4000] + "…";
-        await client.SendTextMessageAsync(message.Chat.Id, reply, cancellationToken: ct);
+        await client.SendMessage(message.Chat.Id, reply, cancellationToken: ct);
     },
     (client, ex, ct) =>
     {
