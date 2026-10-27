@@ -1,5 +1,7 @@
 using MealPlanner.Benchmark.Experiments;
 
+Console.OutputEncoding = System.Text.Encoding.UTF8;
+
 string which = args.Length > 0 ? args[0].ToLowerInvariant() : "all";
 string outDir = args.Length > 1 ? args[1] : "results";
 

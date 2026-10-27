@@ -40,6 +40,7 @@ public class PlannerTests
         var plan = new LpPlanner().Plan(FoodCatalog.LoadSeed(), Targets);
 
         Assert.True(plan.IsFeasible);
+        Assert.True(plan.Deviation(Targets) < 1e-6, $"deviation {plan.Deviation(Targets)}");
         var t = plan.Totals;
         for (int k = 0; k < NutrientTargets.Dimensions; k++)
         {

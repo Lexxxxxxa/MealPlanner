@@ -13,6 +13,8 @@ public class LpPlanner : IMenuPlanner
 {
     private const double MinReportedGrams = 0.5;
 
+    private const double SafetyMargin = 0.005;
+
     public string Name => "LinearProgramming";
 
     public MenuPlan Plan(IReadOnlyList<Food> foods, NutrientTargets targets)
@@ -28,8 +30,11 @@ public class LpPlanner : IMenuPlanner
         {
             var row = new double[n];
             for (int i = 0; i < n; i++) row[i] = PerHundred(foods[i], k);
-            constraints.Add(new LinearConstraint(row, Relation.GreaterOrEqual, targets.Min(k)));
-            constraints.Add(new LinearConstraint((double[])row.Clone(), Relation.LessOrEqual, targets.Max(k)));
+            double lo = targets.Min(k) * (1 + SafetyMargin);
+            double hi = targets.Max(k) * (1 - SafetyMargin);
+            if (lo > hi) { lo = targets.Min(k); hi = targets.Max(k); }
+            constraints.Add(new LinearConstraint(row, Relation.GreaterOrEqual, lo));
+            constraints.Add(new LinearConstraint((double[])row.Clone(), Relation.LessOrEqual, hi));
         }
         for (int i = 0; i < n; i++)
         {
@@ -42,30 +47,49 @@ public class LpPlanner : IMenuPlanner
         sw.Stop();
 
         var items = new List<MenuItem>();
+        MenuPlan plan = Make(items, sw, result.Status, targets);
         if (result.Status == LpStatus.Optimal)
         {
-            for (int i = 0; i < n; i++)
+            items = Collect(foods, result, MinReportedGrams);
+            plan = Make(items, sw, result.Status, targets);
+            if (plan.Deviation(targets) > StrictTolerance)
             {
-                double grams = result.X[i] * 100.0;
-                if (grams >= MinReportedGrams) items.Add(new MenuItem(foods[i], grams));
+                items = Collect(foods, result, 1e-6);
+                plan = Make(items, sw, result.Status, targets);
             }
         }
+        return plan;
+    }
 
+    private const double StrictTolerance = 1e-6;
+
+    private static List<MenuItem> Collect(IReadOnlyList<Food> foods, LpResult result, double minGrams)
+    {
+        var items = new List<MenuItem>();
+        for (int i = 0; i < foods.Count; i++)
+        {
+            double grams = result.X[i] * 100.0;
+            if (grams >= minGrams) items.Add(new MenuItem(foods[i], grams));
+        }
+        return items;
+    }
+
+    private MenuPlan Make(List<MenuItem> items, Stopwatch sw, LpStatus status, NutrientTargets targets)
+    {
         var plan = new MenuPlan
         {
             Algorithm = Name,
             Items = items,
             ElapsedMs = sw.Elapsed.TotalMilliseconds,
-            Note = result.Status == LpStatus.Optimal ? null : $"Симплекс-метод: {result.Status}"
+            Note = status == LpStatus.Optimal ? null : $"Симплекс-метод: {status}"
         };
-
         return new MenuPlan
         {
             Algorithm = plan.Algorithm,
             Items = plan.Items,
             ElapsedMs = plan.ElapsedMs,
             Note = plan.Note,
-            IsFeasible = result.Status == LpStatus.Optimal && plan.Deviation(targets) < 1e-3
+            IsFeasible = status == LpStatus.Optimal && plan.Deviation(targets) <= StrictTolerance
         };
     }
 
