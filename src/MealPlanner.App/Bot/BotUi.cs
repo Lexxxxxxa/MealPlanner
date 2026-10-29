@@ -86,7 +86,7 @@ public class BotUi
             return new BotReply("Как называется блюдо? Напишите название, например: Борщ");
         }
         if (IsKey(t, KeyPair)) { session.Step = Step.None; return await PairAsync(userId, userName, ct); }
-        if (IsKey(t, KeyHelp)) return Help();
+        if (IsKey(t, KeyHelp)) { session.Step = Step.None; return Help(); }
 
         switch (session.Step)
         {
