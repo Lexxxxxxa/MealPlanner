@@ -85,7 +85,7 @@ public class CommandHandler
     private static double ParseNum(string s) =>
         double.Parse(s.Replace(',', '.'), CultureInfo.InvariantCulture);
 
-    private async Task<Member> EnsureMemberAsync(long userId, string userName, CancellationToken ct)
+    internal async Task<Member> EnsureMemberAsync(long userId, string userName, CancellationToken ct)
     {
         var m = await _db.Members.Include(x => x.Household)
             .FirstOrDefaultAsync(x => x.TelegramUserId == userId, ct);
@@ -108,7 +108,7 @@ public class CommandHandler
         }
     }
 
-    private async Task<string> JoinAsync(long userId, string userName, string code, CancellationToken ct)
+    internal async Task<string> JoinAsync(long userId, string userName, string code, CancellationToken ct)
     {
         code = code.Trim().ToUpperInvariant();
         var household = await _db.Households.FirstOrDefaultAsync(h => h.Code == code, ct);
@@ -219,7 +219,7 @@ public class CommandHandler
         return $"Блюдо «{p.Name}» сохранено" + (same != null ? " (заменило прежнее)" : "") + ".\n" + Describe(dish);
     }
 
-    private async Task<List<(HouseholdDish Entity, Dish Model)>> LoadDishesAsync(
+    internal async Task<List<(HouseholdDish Entity, Dish Model)>> LoadDishesAsync(
         int householdId, IReadOnlyList<Food> foods, CancellationToken ct)
     {
         var map = foods.ToDictionary(f => f.Id);
