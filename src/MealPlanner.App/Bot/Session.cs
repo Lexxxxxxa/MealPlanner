@@ -3,7 +3,13 @@ using MealPlanner.Core.Models;
 
 namespace MealPlanner.App.Bot;
 
-public enum Step { None, AddName, AddCustomGrams, AddSearch, NewFoodValues, IdeaText, JoinCode }
+public enum Step { None, AddName, AddCustomGrams, AddSearch, NewFoodValues, IdeaText, JoinCode,
+    EditGrams, EditAddGrams, LogGrams, GoalText }
+
+/// <summary>
+/// Composition screen mode: recipe editing or cooking with actual grams
+/// </summary>
+public enum CookMode { Edit, Cook }
 
 public record ResultItem(Dish Dish, bool IsTemplate, int? DbId);
 
@@ -21,6 +27,18 @@ public class Session
 
     public HashSet<int> Selected { get; } = new();
     public List<ResultItem> Results { get; } = new();
+
+    public CookMode Mode { get; set; }
+    public int EditDishId { get; set; }
+    public string EditName { get; set; } = string.Empty;
+    public int EditServings { get; set; } = 1;
+    public int EditIndex { get; set; }
+    public int EditPendingFoodId { get; set; }
+    public List<(int FoodId, double Grams)> Items { get; } = new();
+    public Dictionary<int, double> Recipe { get; } = new();
+
+    public int DiaryOffset { get; set; }
+    public int LogFoodId { get; set; }
 
     public void ResetDraft()
     {
