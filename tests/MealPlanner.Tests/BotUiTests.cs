@@ -1,4 +1,5 @@
 using MealPlanner.App.Bot;
+using MealPlanner.App.Data;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
@@ -12,12 +13,14 @@ public class BotUiTests
     {
         private readonly BotFixture _fx = new();
         private readonly SessionStore _sessions = new();
+        public DateOnly Today { get; set; } = new(2026, 11, 23);
+        public AppDbContext Db => _fx.Db;
 
         public Task<BotReply> Msg(long user, string text) =>
-            new BotUi(_fx.Db, _sessions).HandleMessageAsync(user, $"user{user}", text);
+            new BotUi(_fx.Db, _sessions, () => Today).HandleMessageAsync(user, $"user{user}", text);
 
         public Task<BotReply> Tap(long user, string data) =>
-            new BotUi(_fx.Db, _sessions).HandleCallbackAsync(user, $"user{user}", data);
+            new BotUi(_fx.Db, _sessions, () => Today).HandleCallbackAsync(user, $"user{user}", data);
 
         public async Task<int> Id(string foodName) =>
             (await _fx.Db.Foods.FirstAsync(f => f.Name == foodName)).Id;
@@ -237,5 +240,137 @@ public class BotUiTests
 
         Assert.Contains("Привет", r.Text);
         Assert.Null(r.Buttons);
+    }
+
+    [Fact]
+    public async Task EditDish_ChangesGramsAndRecalculatesKcal()
+    {
+        using var ui = new Ui();
+        await SaveDish(ui, "Каша", ("Рис", 100));
+        int dishId = (await ui.Db.Dishes.FirstAsync()).Id;
+
+        await ui.Tap(Alice, $"d:edit:{dishId}");
+        var r = await ui.Tap(Alice, "e:a:0:50");
+        Assert.Contains("150 г", r.Text);
+
+        var saved = await ui.Tap(Alice, "e:save");
+        Assert.Contains("обновлён", saved.Text);
+        Assert.Contains("540 ккал", saved.Text);
+
+        var ing = await ui.Db.DishIngredients.AsNoTracking().SingleAsync();
+        Assert.Equal(150, ing.Grams, 3);
+    }
+
+    [Fact]
+    public async Task EditDish_CanAddProductAndChangeServings()
+    {
+        using var ui = new Ui();
+        await SaveDish(ui, "Каша", ("Рис", 100));
+        int dishId = (await ui.Db.Dishes.FirstAsync()).Id;
+        int milk = await ui.Id("Молоко 1.5%");
+
+        await ui.Tap(Alice, $"d:edit:{dishId}");
+        await ui.Tap(Alice, $"e:g:{milk}:200");
+        await ui.Tap(Alice, "e:s:2");
+        await ui.Tap(Alice, "e:save");
+
+        var dish = await ui.Db.Dishes.Include(d => d.Ingredients).AsNoTracking().SingleAsync();
+        Assert.Equal(2, dish.Servings);
+        Assert.Equal(2, dish.Ingredients.Count);
+    }
+
+    [Fact]
+    public async Task CookMode_ShowsRecipeVersusActual_AndLogsActualPortion()
+    {
+        using var ui = new Ui();
+        await SaveDish(ui, "Каша", ("Рис", 100));
+        int dishId = (await ui.Db.Dishes.FirstAsync()).Id;
+
+        await ui.Tap(Alice, $"d:cook:{dishId}");
+        var r = await ui.Tap(Alice, "e:a:0:50");
+        await ui.Tap(Alice, "e:a:0:50");
+        r = await ui.Tap(Alice, "e:home");
+        Assert.Contains("по рецепту 100", r.Text);
+        Assert.Contains("+360 ккал на порцию", r.Text);
+
+        await ui.Tap(Alice, "e:eat");
+        var day = await ui.Tap(Alice, "e:ate:1");
+        Assert.Contains("720 из 2000", day.Text);
+
+        var ing = await ui.Db.DishIngredients.AsNoTracking().SingleAsync();
+        Assert.Equal(100, ing.Grams, 3);
+    }
+
+    [Fact]
+    public async Task Diary_LogsProductAndShowsTotalsAndMacros()
+    {
+        using var ui = new Ui();
+        int rice = await ui.Id("Рис");
+
+        var day = await ui.Tap(Alice, $"l:g:{rice}:100");
+        Assert.Contains("360 из 2000", day.Text);
+        Assert.Contains("Белки: 7 из 100", day.Text);
+        Assert.Contains("Осталось: 1640", day.Text);
+    }
+
+    [Fact]
+    public async Task Diary_EatDishPortions_GoalAndDelete()
+    {
+        using var ui = new Ui();
+        await SaveDish(ui, "Каша", ("Рис", 100));
+        int dishId = (await ui.Db.Dishes.FirstAsync()).Id;
+
+        var day = await ui.Tap(Alice, $"d:ate:{dishId}:1.5");
+        Assert.Contains("540 из 2000", day.Text);
+
+        day = await ui.Tap(Alice, "t:g:1500");
+        Assert.Contains("540 из 1500", day.Text);
+
+        int entryId = (await ui.Db.DiaryEntries.AsNoTracking().SingleAsync()).Id;
+        day = await ui.Tap(Alice, $"t:del:{entryId}");
+        Assert.Contains("Пока ничего не записано", day.Text);
+    }
+
+    [Fact]
+    public async Task Diary_IsPerMemberAndPerDay()
+    {
+        using var ui = new Ui();
+        int rice = await ui.Id("Рис");
+        await ui.Tap(Alice, $"l:g:{rice}:100");
+
+        var bob = await ui.Msg(Bob, "📅 Дневник");
+        Assert.Contains("Пока ничего не записано", bob.Text);
+
+        ui.Today = ui.Today.AddDays(1);
+        var next = await ui.Msg(Alice, "📅 Дневник");
+        Assert.Contains("Пока ничего не записано", next.Text);
+        var prev = await ui.Tap(Alice, "t:prev");
+        Assert.Contains("Вчера", prev.Text);
+        Assert.Contains("360 из", prev.Text);
+    }
+
+    [Fact]
+    public async Task Diary_TypedGoalIsValidated()
+    {
+        using var ui = new Ui();
+        await ui.Tap(Alice, "t:gx");
+        var bad = await ui.Msg(Alice, "50");
+        Assert.Contains("от 800 до 6000", bad.Text);
+        var ok = await ui.Msg(Alice, "2100");
+        Assert.Contains("0 из 2100", ok.Text);
+    }
+
+    [Fact]
+    public void SchemaUpgrade_CreatesDiaryTablesInOldDatabase()
+    {
+        using var fx = new BotFixture();
+        fx.Db.Database.ExecuteSqlRaw("DROP TABLE \"DiaryEntries\"");
+        fx.Db.Database.ExecuteSqlRaw("DROP TABLE \"MemberTargets\"");
+
+        AppDbContext.Initialize(fx.Db);
+
+        fx.Db.DiaryEntries.Add(new DiaryEntry { MemberId = 1, Date = new DateOnly(2026, 11, 23), Label = "x", Kcal = 1 });
+        fx.Db.SaveChanges();
+        Assert.Equal(1, fx.Db.DiaryEntries.Count());
     }
 }
