@@ -14,6 +14,8 @@ public class AppDbContext : DbContext
     public DbSet<HouseholdDish> Dishes => Set<HouseholdDish>();
     public DbSet<HouseholdDishIngredient> DishIngredients => Set<HouseholdDishIngredient>();
     public DbSet<PantryEntry> Pantry => Set<PantryEntry>();
+    public DbSet<DiaryEntry> DiaryEntries => Set<DiaryEntry>();
+    public DbSet<MemberTarget> MemberTargets => Set<MemberTarget>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -49,14 +51,38 @@ public class AppDbContext : DbContext
             e.HasIndex(p => new { p.HouseholdId, p.FoodId }).IsUnique();
             e.HasOne(p => p.Food).WithMany().HasForeignKey(p => p.FoodId).OnDelete(DeleteBehavior.Restrict);
         });
+
+        b.Entity<DiaryEntry>(e => e.HasIndex(d => new { d.MemberId, d.Date }));
+        b.Entity<MemberTarget>(e => e.HasIndex(t => t.MemberId).IsUnique());
     }
 
     public static void Initialize(AppDbContext db)
     {
         db.Database.EnsureCreated();
+        UpgradeSchema(db);
         if (db.Foods.Any()) return;
 
         db.Foods.AddRange(FoodCatalog.LoadSeed());
         db.SaveChanges();
+    }
+
+    private static void UpgradeSchema(AppDbContext db)
+    {
+        db.Database.ExecuteSqlRaw(@"CREATE TABLE IF NOT EXISTS ""DiaryEntries"" (
+            ""Id"" INTEGER NOT NULL CONSTRAINT ""PK_DiaryEntries"" PRIMARY KEY AUTOINCREMENT,
+            ""MemberId"" INTEGER NOT NULL,
+            ""Date"" TEXT NOT NULL,
+            ""Label"" TEXT NOT NULL,
+            ""Kcal"" REAL NOT NULL,
+            ""Protein"" REAL NOT NULL,
+            ""Fat"" REAL NOT NULL,
+            ""Carbs"" REAL NOT NULL,
+            ""CreatedUtc"" TEXT NOT NULL)");
+        db.Database.ExecuteSqlRaw(@"CREATE INDEX IF NOT EXISTS ""IX_DiaryEntries_MemberId_Date"" ON ""DiaryEntries"" (""MemberId"", ""Date"")");
+        db.Database.ExecuteSqlRaw(@"CREATE TABLE IF NOT EXISTS ""MemberTargets"" (
+            ""Id"" INTEGER NOT NULL CONSTRAINT ""PK_MemberTargets"" PRIMARY KEY AUTOINCREMENT,
+            ""MemberId"" INTEGER NOT NULL,
+            ""Kcal"" REAL NOT NULL)");
+        db.Database.ExecuteSqlRaw(@"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_MemberTargets_MemberId"" ON ""MemberTargets"" (""MemberId"")");
     }
 }
