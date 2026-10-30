@@ -14,19 +14,20 @@ namespace MealPlanner.App.Bot;
 /// Button-driven bot interface: main menu, what to cook, my dishes, add dish, pair
 /// Independent of Telegram: takes text or pressed button data and returns a <see cref="BotReply"/>
 /// </summary>
-public class BotUi
+public partial class BotUi
 {
     public const string KeyIdea = "Что приготовить";
     public const string KeyDishes = "Мои блюда";
     public const string KeyAdd = "Добавить блюдо";
     public const string KeyPair = "Пара";
     public const string KeyHelp = "Помощь";
+    public const string KeyDiary = "Дневник";
 
     public static readonly string[][] MainMenu =
     {
         new[] { "🍳 " + KeyIdea, "📖 " + KeyDishes },
-        new[] { "➕ " + KeyAdd, "👫 " + KeyPair },
-        new[] { "❓ " + KeyHelp }
+        new[] { "➕ " + KeyAdd, "📅 " + KeyDiary },
+        new[] { "👫 " + KeyPair, "❓ " + KeyHelp }
     };
 
     private static readonly string[] CategoryOrder =
@@ -47,11 +48,13 @@ public class BotUi
     private readonly AppDbContext _db;
     private readonly CommandHandler _legacy;
     private readonly SessionStore _sessions;
+    private readonly Func<DateOnly> _today;
 
-    public BotUi(AppDbContext db, SessionStore sessions)
+    public BotUi(AppDbContext db, SessionStore sessions, Func<DateOnly>? today = null)
     {
         _db = db;
         _sessions = sessions;
+        _today = today ?? (() => DateOnly.FromDateTime(DateTime.Now));
         _legacy = new CommandHandler(db);
     }
 
@@ -86,6 +89,7 @@ public class BotUi
             return new BotReply("Как называется блюдо? Напишите название, например: Борщ");
         }
         if (IsKey(t, KeyPair)) { session.Step = Step.None; return await PairAsync(userId, userName, ct); }
+        if (IsKey(t, KeyDiary)) { session.Step = Step.None; session.DiaryOffset = 0; return await DayAsync(userId, userName, session, ct); }
         if (IsKey(t, KeyHelp)) { session.Step = Step.None; return Help(); }
 
         switch (session.Step)
@@ -108,6 +112,12 @@ public class BotUi
 
             case Step.IdeaText:
                 return await IdeaFromTextAsync(userId, userName, session, t, ct);
+
+            case Step.EditGrams:
+            case Step.EditAddGrams:
+            case Step.LogGrams:
+            case Step.GoalText:
+                return await TypedNumberAsync(userId, userName, session, t, ct);
 
             case Step.JoinCode:
                 session.Step = Step.None;
@@ -134,6 +144,9 @@ public class BotUi
             case "a": return await AddCallbackAsync(userId, userName, s, p, ct);
             case "d": return await DishCallbackAsync(userId, userName, s, p, ct);
             case "r": return await ResultCallbackAsync(userId, userName, s, p, ct);
+            case "e": return await EditCallbackAsync(userId, userName, s, p, ct);
+            case "t": return await DiaryCallbackAsync(userId, userName, s, p, ct);
+            case "l": return await LogCallbackAsync(userId, userName, s, p, ct);
             case "p":
                 s.Step = Step.JoinCode;
                 return new BotReply("Введите код партнёра (6 символов, например ABC123):");
@@ -147,6 +160,8 @@ public class BotUi
         "🍳 Что приготовить — отметьте продукты, которые есть сейчас, и я подскажу блюда из вашей базы.\n" +
         "📖 Мои блюда — все блюда с калориями.\n" +
         "➕ Добавить блюдо — выберите продукты кнопками и граммы, калории посчитаются сами.\n" +
+        "✏️ В блюде можно изменить продукты и граммы, а «Готовлю» пересчитает калории по тому, что вы реально положили.\n" +
+        "📅 Дневник — что вы съели за день: калории и БЖУ, сравнение с вашей целью.\n" +
         "👫 Пара — общая база блюд для двоих.");
 
     private async Task<List<Food>> FoodsAsync(CancellationToken ct) =>
@@ -395,8 +410,28 @@ public class BotUi
                 foreach (var ing in dish.Ingredients) sb.AppendLine($"• {ing.Food.Name} — {ing.Grams:F0} г");
                 return new BotReply(sb.ToString().TrimEnd(), new[]
                 {
-                    Row(new InlineButton("🗑 Удалить", $"d:del:{id}"), new InlineButton("⬅️ К списку", "d:list"))
+                    Row(new InlineButton("👩‍🍳 Готовлю", $"d:cook:{id}"), new InlineButton("🍽 Съел(а)", $"d:eat:{id}")),
+                    Row(new InlineButton("✏️ Изменить", $"d:edit:{id}"), new InlineButton("🗑 Удалить", $"d:del:{id}")),
+                    Row(new InlineButton("⬅️ К списку", "d:list"))
                 });
+            }
+            case "edit":
+            case "cook":
+                StartEditing(s, found.Entity, dish, action == "cook" ? CookMode.Cook : CookMode.Edit);
+                return EditScreen(s, foods, null);
+            case "eat":
+            {
+                var portions = new[] { 0.5, 1, 1.5, 2, 3 };
+                return new BotReply($"Сколько порций «{dish.Name}» вы съели?\nНа порцию: {Nutr(dish.PerServing)}",
+                    Rows(portions.Select(x => new InlineButton(PortionText(x), $"d:ate:{id}:{x.ToString(CultureInfo.InvariantCulture)}")), 3)
+                        .Append(Row(new InlineButton("⬅️ Назад", $"d:v:{id}"))).ToList());
+            }
+            case "ate":
+            {
+                double portions = double.Parse(p[3], CultureInfo.InvariantCulture);
+                await AddDiaryAsync(member, s, dish.Name + " × " + PortionText(portions), dish.PerServing * portions, ct);
+                s.DiaryOffset = 0;
+                return await DayAsync(userId, userName, s, ct);
             }
             case "del":
                 return new BotReply($"Удалить «{dish.Name}»?", new[]
