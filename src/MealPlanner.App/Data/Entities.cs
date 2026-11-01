@@ -66,11 +66,20 @@ public class DiaryEntry
 }
 
 /// <summary>
-/// Personal daily calorie goal (protein, fat and carbohydrates are counted as 20/30/50% of calories)
+/// Member profile and daily norm: Kcal is the effective norm (calculated from the profile or set manually)
 /// </summary>
 public class MemberTarget
 {
     public int Id { get; set; }
     public int MemberId { get; set; }
     public double Kcal { get; set; } = 2000;
+
+    public bool HasProfile { get; set; }
+    public bool IsManual { get; set; }
+    public Sex Sex { get; set; } = Sex.Male;
+    public int AgeYears { get; set; } = 30;
+    public double HeightCm { get; set; } = 170;
+    public double WeightKg { get; set; } = 70;
+    public double Activity { get; set; } = 1.375;
+    public DietGoal Goal { get; set; } = DietGoal.Maintain;
 }

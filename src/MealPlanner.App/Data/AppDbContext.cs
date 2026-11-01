@@ -82,7 +82,26 @@ public class AppDbContext : DbContext
         db.Database.ExecuteSqlRaw(@"CREATE TABLE IF NOT EXISTS ""MemberTargets"" (
             ""Id"" INTEGER NOT NULL CONSTRAINT ""PK_MemberTargets"" PRIMARY KEY AUTOINCREMENT,
             ""MemberId"" INTEGER NOT NULL,
-            ""Kcal"" REAL NOT NULL)");
+            ""Kcal"" REAL NOT NULL,
+            ""HasProfile"" INTEGER NOT NULL DEFAULT 0,
+            ""IsManual"" INTEGER NOT NULL DEFAULT 0,
+            ""Sex"" INTEGER NOT NULL DEFAULT 0,
+            ""AgeYears"" INTEGER NOT NULL DEFAULT 30,
+            ""HeightCm"" REAL NOT NULL DEFAULT 170,
+            ""WeightKg"" REAL NOT NULL DEFAULT 70,
+            ""Activity"" REAL NOT NULL DEFAULT 1.375,
+            ""Goal"" INTEGER NOT NULL DEFAULT 1)");
+        foreach (var col in new[]
+        {
+            "\"HasProfile\" INTEGER NOT NULL DEFAULT 0", "\"IsManual\" INTEGER NOT NULL DEFAULT 0",
+            "\"Sex\" INTEGER NOT NULL DEFAULT 0", "\"AgeYears\" INTEGER NOT NULL DEFAULT 30",
+            "\"HeightCm\" REAL NOT NULL DEFAULT 170", "\"WeightKg\" REAL NOT NULL DEFAULT 70",
+            "\"Activity\" REAL NOT NULL DEFAULT 1.375", "\"Goal\" INTEGER NOT NULL DEFAULT 1"
+        })
+        {
+            try { db.Database.ExecuteSqlRaw($"ALTER TABLE \"MemberTargets\" ADD COLUMN {col}"); }
+            catch (Exception ex) when (ex.ToString().Contains("duplicate column", StringComparison.OrdinalIgnoreCase)) { }
+        }
         db.Database.ExecuteSqlRaw(@"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_MemberTargets_MemberId"" ON ""MemberTargets"" (""MemberId"")");
     }
 }

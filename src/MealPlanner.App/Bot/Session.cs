@@ -4,12 +4,28 @@ using MealPlanner.Core.Models;
 namespace MealPlanner.App.Bot;
 
 public enum Step { None, AddName, AddCustomGrams, AddSearch, NewFoodValues, IdeaText, JoinCode,
-    EditGrams, EditAddGrams, LogGrams, GoalText }
+    EditGrams, EditAddGrams, LogGrams, GoalText,
+    ProfAge, ProfHeight, ProfWeight }
 
 /// <summary>
 /// Composition screen mode: recipe editing or cooking with actual grams
 /// </summary>
 public enum CookMode { Edit, Cook }
+
+/// <summary>
+/// Profile draft during the norm calculation wizard; empty fields are replaced with default values for the estimate
+/// </summary>
+public class ProfileDraft
+{
+    public Sex? Sex { get; set; }
+    public int? Age { get; set; }
+    public double? Height { get; set; }
+    public double? Weight { get; set; }
+    public double? Activity { get; set; }
+    public DietGoal? Goal { get; set; }
+
+    public void Clear() { Sex = null; Age = null; Height = null; Weight = null; Activity = null; Goal = null; }
+}
 
 public record ResultItem(Dish Dish, bool IsTemplate, int? DbId);
 
@@ -36,6 +52,8 @@ public class Session
     public int EditPendingFoodId { get; set; }
     public List<(int FoodId, double Grams)> Items { get; } = new();
     public Dictionary<int, double> Recipe { get; } = new();
+
+    public ProfileDraft Prof { get; } = new();
 
     public int DiaryOffset { get; set; }
     public int LogFoodId { get; set; }
