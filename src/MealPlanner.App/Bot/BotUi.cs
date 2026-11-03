@@ -113,6 +113,11 @@ public partial class BotUi
             case Step.IdeaText:
                 return await IdeaFromTextAsync(userId, userName, session, t, ct);
 
+            case Step.ProfAge:
+            case Step.ProfHeight:
+            case Step.ProfWeight:
+                return ProfileTyped(session, t)!;
+
             case Step.EditGrams:
             case Step.EditAddGrams:
             case Step.LogGrams:
@@ -147,6 +152,7 @@ public partial class BotUi
             case "e": return await EditCallbackAsync(userId, userName, s, p, ct);
             case "t": return await DiaryCallbackAsync(userId, userName, s, p, ct);
             case "l": return await LogCallbackAsync(userId, userName, s, p, ct);
+            case "g": return await ProfileCallbackAsync(userId, userName, s, p, ct);
             case "p":
                 s.Step = Step.JoinCode;
                 return new BotReply("Введите код партнёра (6 символов, например ABC123):");
@@ -161,7 +167,7 @@ public partial class BotUi
         "📖 Мои блюда — все блюда с калориями.\n" +
         "➕ Добавить блюдо — выберите продукты кнопками и граммы, калории посчитаются сами.\n" +
         "✏️ В блюде можно изменить продукты и граммы, а «Готовлю» пересчитает калории по тому, что вы реально положили.\n" +
-        "📅 Дневник — что вы съели за день: калории и БЖУ, сравнение с вашей целью.\n" +
+        "📅 Дневник — что вы съели за день: калории и БЖВ. Норма считается по вашему ИМТ, активности и цели (похудеть, держать вес или набрать).\n" +
         "👫 Пара — общая база блюд для двоих.");
 
     private async Task<List<Food>> FoodsAsync(CancellationToken ct) =>

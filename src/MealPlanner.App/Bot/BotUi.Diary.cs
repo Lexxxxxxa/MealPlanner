@@ -300,14 +300,12 @@ public partial class BotUi
         await _db.SaveChangesAsync(ct);
     }
 
-    private async Task<double> TargetAsync(int memberId, CancellationToken ct) =>
-        (await _db.MemberTargets.AsNoTracking().FirstOrDefaultAsync(t => t.MemberId == memberId, ct))?.Kcal ?? 2000;
-
     private async Task SetTargetAsync(Member member, double kcal, CancellationToken ct)
     {
         var t = await _db.MemberTargets.FirstOrDefaultAsync(x => x.MemberId == member.Id, ct);
-        if (t is null) _db.MemberTargets.Add(new MemberTarget { MemberId = member.Id, Kcal = kcal });
-        else t.Kcal = kcal;
+        if (t is null) { t = new MemberTarget { MemberId = member.Id }; _db.MemberTargets.Add(t); }
+        t.Kcal = kcal;
+        t.IsManual = true;
         await _db.SaveChangesAsync(ct);
     }
 
@@ -331,7 +329,10 @@ public partial class BotUi
         var date = _today().AddDays(s.DiaryOffset);
         var entries = await _db.DiaryEntries.AsNoTracking()
             .Where(e => e.MemberId == member.Id && e.Date == date).OrderBy(e => e.Id).ToListAsync(ct);
-        double target = await TargetAsync(member.Id, ct);
+        var prof = await ProfileAsync(member.Id, ct);
+        double target = prof?.Kcal ?? 2000;
+        var (ps, fs, cs) = prof is { HasProfile: true, IsManual: false }
+            ? EnergyCalculator.MacroShares(prof.Goal) : (0.20, 0.30, 0.50);
 
         double kcal = entries.Sum(e => e.Kcal), prot = entries.Sum(e => e.Protein),
                fat = entries.Sum(e => e.Fat), carb = entries.Sum(e => e.Carbs);
@@ -341,11 +342,12 @@ public partial class BotUi
         for (int i = 0; i < entries.Count; i++) sb.AppendLine($"{i + 1}. {entries[i].Label} — {entries[i].Kcal:F0} ккал");
 
         sb.AppendLine($"\n🔥 Калории: {kcal:F0} из {target:F0}");
+        if (prof is { HasProfile: true }) sb.AppendLine($"🎯 {EnergyCalculator.GoalLabel(prof.Goal)}");
         sb.AppendLine(Bar(kcal, target));
         sb.AppendLine(kcal <= target ? $"Осталось: {target - kcal:F0} ккал" : $"Перебор: +{kcal - target:F0} ккал");
-        sb.AppendLine($"\nБелки: {prot:F0} из {target * 0.20 / 4:F0} г");
-        sb.AppendLine($"Жиры: {fat:F0} из {target * 0.30 / 9:F0} г");
-        sb.Append($"Углеводы: {carb:F0} из {target * 0.50 / 4:F0} г");
+        sb.AppendLine($"\nБелки: {prot:F0} из {target * ps / 4:F0} г");
+        sb.AppendLine($"Жиры: {fat:F0} из {target * fs / 9:F0} г");
+        sb.Append($"Углеводы: {carb:F0} из {target * cs / 4:F0} г");
 
         var rows = new List<IReadOnlyList<InlineButton>>
         {
@@ -388,12 +390,7 @@ public partial class BotUi
                 return new BotReply("Что вы съели?", rows);
             }
             case "goal":
-            {
-                double cur = await TargetAsync(member.Id, ct);
-                var rows = Rows(GoalPresets.Select(g => new InlineButton($"{g}", $"t:g:{g}")), 3);
-                rows.Add(Row(new InlineButton("✍️ Другое число", "t:gx"), new InlineButton("⬅️ Назад", "t:day")));
-                return new BotReply($"🎯 Сколько калорий в день вам нужно?\nСейчас: {cur:F0} ккал. Белки/жиры/углеводы считаются как 20/30/50 % калорий.", rows);
-            }
+                return await GoalHomeAsync(member, ct);
             case "g":
                 await SetTargetAsync(member, double.Parse(p[2], CultureInfo.InvariantCulture), ct);
                 break;
