@@ -373,4 +373,46 @@ public class BotUiTests
         fx.Db.SaveChanges();
         Assert.Equal(1, fx.Db.DiaryEntries.Count());
     }
+
+    [Fact]
+    public async Task GoalWizard_ShowsEstimateAtEveryStep_AndSavesNorm()
+    {
+        using var ui = new Ui();
+        var r = await ui.Tap(Alice, "g:start");
+        Assert.Contains("Ориентир на день", r.Text);
+
+        r = await ui.Tap(Alice, "g:sx:M");
+        Assert.Contains("ккал", r.Text);
+        r = await ui.Msg(Alice, "30");
+        Assert.Contains("ккал", r.Text);
+        r = await ui.Msg(Alice, "180");
+        Assert.Contains("ккал", r.Text);
+        r = await ui.Msg(Alice, "80");
+        Assert.Contains("ИМТ: 24,7", r.Text.Replace('.', ','));
+        Assert.True(HasButton(r, "g:ac:1.375"));
+
+        r = await ui.Tap(Alice, "g:ac:1.375");
+        Assert.Contains("Похудеть · 2080 ккал", r.Text + string.Join("|", r.Buttons!.SelectMany(x => x).Select(b => b.Text)));
+
+        r = await ui.Tap(Alice, "g:go:0");
+        Assert.Contains("Норма на день: 2080", r.Text);
+
+        var day = await ui.Msg(Alice, "📅 Дневник");
+        Assert.Contains("0 из 2080", day.Text);
+        Assert.Contains("Похудеть", day.Text);
+        Assert.Contains("Белки: 0 из 130", day.Text);
+    }
+
+    [Fact]
+    public async Task GoalWizard_ValidatesTypedNumbers()
+    {
+        using var ui = new Ui();
+        await ui.Tap(Alice, "g:start");
+        await ui.Tap(Alice, "g:sx:F");
+        Assert.Contains("от 14 до 100", (await ui.Msg(Alice, "5")).Text);
+        await ui.Msg(Alice, "25");
+        Assert.Contains("от 120 до 230", (await ui.Msg(Alice, "50")).Text);
+        await ui.Msg(Alice, "165");
+        Assert.Contains("от 30 до 300", (await ui.Msg(Alice, "abc")).Text);
+    }
 }
