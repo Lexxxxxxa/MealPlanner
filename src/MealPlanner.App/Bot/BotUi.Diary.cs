@@ -24,6 +24,8 @@ public partial class BotUi
         s.EditDishId = entity.Id;
         s.EditName = dish.Name;
         s.EditServings = dish.Servings;
+        s.EditMinutes = dish.CookMinutes;
+        s.EditDifficulty = dish.Difficulty;
         s.Items.Clear();
         s.Recipe.Clear();
         foreach (var ing in dish.Ingredients)
@@ -81,6 +83,7 @@ public partial class BotUi
         }
 
         rows.Add(Row(new InlineButton("➕ Добавить продукт", "e:add"), new InlineButton("🔢 Порции", "e:sv")));
+        rows.Add(Row(new InlineButton($"⏱ {s.EditMinutes} мин", "e:tm"), new InlineButton($"🔧 {DifficultyText(s.EditDifficulty)}", "e:df")));
         if (cook)
         {
             rows.Add(Row(new InlineButton("🍽 Съел(а) порцию", "e:eat"), new InlineButton("💾 Обновить рецепт", "e:save")));
@@ -178,6 +181,16 @@ public partial class BotUi
                 s.EditPendingFoodId = int.Parse(p[2], CultureInfo.InvariantCulture);
                 s.Step = Step.EditAddGrams;
                 return new BotReply("Напишите количество, например: 120, 0,5 кг или 3 шт");
+            case "tm":
+                return TimeScreen("Сколько времени готовится блюдо?", "e:tmv", "e:home");
+            case "tmv":
+                s.EditMinutes = int.Parse(p[2], CultureInfo.InvariantCulture);
+                return EditScreen(s, foods, null);
+            case "df":
+                return DifficultyScreen("Насколько сложно готовить это блюдо?", "e:dfv", "e:home");
+            case "dfv":
+                s.EditDifficulty = int.Parse(p[2], CultureInfo.InvariantCulture);
+                return EditScreen(s, foods, null);
             case "sv":
                 return new BotReply("Сколько порций получилось?",
                     Rows(ServingPresets.Select(n => new InlineButton(n.ToString(), $"e:s:{n}")), 4)
@@ -193,6 +206,8 @@ public partial class BotUi
                 if (entity is null) return await DishListAsync(userId, userName, ct);
 
                 entity.Servings = s.EditServings;
+                entity.CookMinutes = s.EditMinutes;
+                entity.Difficulty = s.EditDifficulty;
                 _db.DishIngredients.RemoveRange(entity.Ingredients);
                 entity.Ingredients = s.Items.GroupBy(i => i.FoodId)
                     .Select(g => new HouseholdDishIngredient { DishId = entity.Id, FoodId = g.Key, Grams = g.Sum(x => x.Grams) })
@@ -359,6 +374,8 @@ public partial class BotUi
         if (s.DiaryOffset < 0) nav.Add(new("Сегодня", "t:today"));
         if (s.DiaryOffset < 0) nav.Add(new("▶️", "t:next"));
         rows.Add(nav);
+        if (s.DiaryOffset == 0 && kcal < target - 80)
+            rows.Add(Row(new InlineButton("💡 Что съесть до нормы", "t:fit")));
         rows.Add(Row(new InlineButton("🎯 Моя цель", "t:goal")));
         return new BotReply(sb.ToString(), rows);
     }
@@ -366,6 +383,8 @@ public partial class BotUi
     private async Task<BotReply> DiaryCallbackAsync(long userId, string userName, Session s, string[] p, CancellationToken ct)
     {
         var member = await _legacy.EnsureMemberAsync(userId, userName, ct);
+        if (p.Length > 1 && p[1] is "fit" or "fv" or "fa")
+            return await FitCallbackAsync(userId, userName, s, p, ct);
         switch (p.Length > 1 ? p[1] : "")
         {
             case "prev": s.DiaryOffset--; break;

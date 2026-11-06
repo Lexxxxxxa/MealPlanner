@@ -29,6 +29,8 @@ public class ProfileDraft
 
 public record ResultItem(Dish Dish, bool IsTemplate, int? DbId);
 
+public record FitItem(Dish Dish, double Portions, bool IsTemplate);
+
 /// <summary>
 /// Short-lived conversation with the user: selections made in the cook and add dish wizards
 /// </summary>
@@ -40,15 +42,23 @@ public class Session
     public List<(int FoodId, double Grams)> Draft { get; } = new();
     public int PendingFoodId { get; set; }
     public string NewFoodName { get; set; } = string.Empty;
+    public int DraftServings { get; set; } = 1;
+    public int DraftMinutes { get; set; } = 30;
 
     public HashSet<int> Selected { get; } = new();
     public List<ResultItem> Results { get; } = new();
+    public bool QuickOnly { get; set; }
+    public int MaxDifficulty { get; set; } = 3;
+
+    public List<FitItem> Fit { get; } = new();
 
     public CookMode Mode { get; set; }
     public int EditDishId { get; set; }
     public string EditName { get; set; } = string.Empty;
     public int EditServings { get; set; } = 1;
     public int EditIndex { get; set; }
+    public int EditMinutes { get; set; } = 30;
+    public int EditDifficulty { get; set; } = 2;
     public int EditPendingFoodId { get; set; }
     public List<(int FoodId, double Grams)> Items { get; } = new();
     public Dictionary<int, double> Recipe { get; } = new();
@@ -64,6 +74,8 @@ public class Session
         Draft.Clear();
         PendingFoodId = 0;
         NewFoodName = string.Empty;
+        DraftServings = 1;
+        DraftMinutes = 30;
     }
 }
 

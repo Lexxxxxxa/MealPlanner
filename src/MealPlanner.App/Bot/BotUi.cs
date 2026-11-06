@@ -211,6 +211,7 @@ public partial class BotUi
 
         var rows = Rows(Categories(foods).Select((c, i) => new InlineButton(CatLabel(c), $"i:c:{i}")), 2);
         rows.Add(Row(new InlineButton("✍️ Написать списком", "i:txt")));
+        rows.Add(FilterRow(s));
         rows.Add(Row(new InlineButton("🗑 Сбросить", "i:reset"),
                      new InlineButton($"✅ Готово ({s.Selected.Count})", "i:done")));
         return new BotReply(sb.ToString(), rows);
@@ -241,6 +242,10 @@ public partial class BotUi
                 return IdeaCategory(s, foods, int.Parse(p[3], CultureInfo.InvariantCulture));
             case "reset": s.Selected.Clear(); return IdeaHome(s, foods);
             case "home": return IdeaHome(s, foods);
+            case "f":
+                if (p[2] == "t") s.QuickOnly = !s.QuickOnly;
+                else s.MaxDifficulty = s.MaxDifficulty <= 1 ? 3 : s.MaxDifficulty - 1;
+                return s.Selected.Count == 0 ? IdeaHome(s, foods) : await IdeaResultsAsync(userId, userName, s, foods, null, ct);
             case "txt":
                 s.Step = Step.IdeaText;
                 return new BotReply("Напишите продукты через запятую, например:\nкурица, рис, лук, помидоры");
@@ -274,7 +279,7 @@ public partial class BotUi
         }
 
         var member = await _legacy.EnsureMemberAsync(userId, userName, ct);
-        var own = (await _legacy.LoadDishesAsync(member.HouseholdId, foods, ct)).ToList();
+        var own = (await _legacy.LoadDishesAsync(member.HouseholdId, foods, ct)).Where(o => PassesFilter(s, o.Model)).ToList();
         var pantry = s.Selected.ToDictionary(id => id, _ => 100000.0);
         var rec = new SmartRecommender();
         var ctx = new RecommendationContext();
@@ -283,12 +288,13 @@ public partial class BotUi
             .Where(r => r.Coverage.IngredientShare >= 0.5).ToList();
 
         var ownNames = own.Select(o => o.Model.Name.ToLowerInvariant()).ToHashSet();
-        var templates = TemplateDishes.Build(foods).Where(t => !ownNames.Contains(t.Name.ToLowerInvariant())).ToList();
+        var templates = TemplateDishes.Build(foods).Where(t => !ownNames.Contains(t.Name.ToLowerInvariant()) && PassesFilter(s, t)).ToList();
         var tmplTop = rec.Recommend(templates, pantry, ctx, 3)
             .Where(r => r.Coverage.IngredientShare >= 0.5).ToList();
 
         s.Results.Clear();
         var sb = new StringBuilder("🍽 Вот что можно приготовить:\n");
+        if (s.QuickOnly || s.MaxDifficulty < 3) sb.AppendLine("Фильтры: " + FilterText(s));
         if (unknown is { Count: > 0 }) sb.AppendLine("(не нашла: " + string.Join(", ", unknown) + ")");
         sb.AppendLine();
 
@@ -325,14 +331,52 @@ public partial class BotUi
         var rows = new List<IReadOnlyList<InlineButton>>
         {
             Row(Enumerable.Range(1, n).Select(i => new InlineButton(i.ToString(), $"r:v:{i - 1}")).ToArray()),
+            FilterRow(s),
             Row(new InlineButton("🔄 Другие продукты", "r:again"))
         };
         return new BotReply(sb.ToString().TrimEnd(), rows);
     }
 
+    private static bool PassesFilter(Session s, Dish d) =>
+        (!s.QuickOnly || d.CookMinutes <= 20) && d.Difficulty <= s.MaxDifficulty;
+
+    private static string DifficultyText(int d) => d switch { 1 => "легко", 3 => "сложно", _ => "средне" };
+
+    private static string TimeInfo(Dish d) => $"⏱ {d.CookMinutes} мин · сложность: {DifficultyText(d.Difficulty)}";
+
+    private static string FilterText(Session s)
+    {
+        var parts = new List<string>();
+        if (s.QuickOnly) parts.Add("до 20 минут");
+        if (s.MaxDifficulty == 1) parts.Add("только лёгкие");
+        else if (s.MaxDifficulty == 2) parts.Add("не сложные");
+        return string.Join(", ", parts);
+    }
+
+    private static IReadOnlyList<InlineButton> FilterRow(Session s) => Row(
+        new InlineButton((s.QuickOnly ? "✅ " : "") + "⚡ До 20 мин", "i:f:t"),
+        new InlineButton(s.MaxDifficulty switch { 1 => "🔧 Только лёгкие", 2 => "🔧 Не сложные", _ => "🔧 Любая сложность" }, "i:f:d"));
+
+    private static readonly int[] MinutePresets = { 10, 15, 20, 30, 45, 60, 90 };
+
+    private static BotReply TimeScreen(string question, string prefix, string back)
+    {
+        var rows = Rows(MinutePresets.Select(m => new InlineButton($"{m} мин", $"{prefix}:{m}")), 4);
+        rows.Add(Row(new InlineButton("⬅️ Назад", back)));
+        return new BotReply("⏱ " + question, rows);
+    }
+
+    private static BotReply DifficultyScreen(string question, string prefix, string back) => new(
+        "🔧 " + question,
+        new[]
+        {
+            Row(new InlineButton("🟢 Легко", $"{prefix}:1"), new InlineButton("🟡 Средне", $"{prefix}:2"), new InlineButton("🔴 Сложно", $"{prefix}:3")),
+            Row(new InlineButton("⬅️ Назад", back))
+        });
+
     private static string Line(int n, DishRecommendation r, string icon)
     {
-        string head = $"{n}. {icon} {r.Dish.Name} — {r.Dish.PerServing.Kcal:F0} ккал/порция";
+        string head = $"{n}. {icon} {r.Dish.Name} — {r.Dish.PerServing.Kcal:F0} ккал/порция · ⏱ {r.Dish.CookMinutes} мин";
         if (r.Coverage.IsCookable) return head + "\n    ✅ всё есть";
         var miss = r.Coverage.Missing.Take(3).Select(m => m.Food.Name);
         string more = r.Coverage.Missing.Count > 3 ? $" и ещё {r.Coverage.Missing.Count - 3}" : "";
@@ -353,7 +397,7 @@ public partial class BotUi
                 var item = s.Results[i];
                 var d = item.Dish;
 
-                var sb = new StringBuilder($"{(item.IsTemplate ? "💡" : "📖")} {d.Name} ({d.Servings} порц.)\n");
+                var sb = new StringBuilder($"{(item.IsTemplate ? "💡" : "📖")} {d.Name} ({d.Servings} порц.)\n{TimeInfo(d)}\n");
                 sb.AppendLine("На порцию: " + Nutr(d.PerServing));
                 sb.AppendLine("\nСостав:");
                 foreach (var ing in d.Ingredients)
@@ -370,7 +414,7 @@ public partial class BotUi
                 if (i < 0 || i >= s.Results.Count) return await IdeaResultsAsync(userId, userName, s, foods, null, ct);
                 var member = await _legacy.EnsureMemberAsync(userId, userName, ct);
                 var d = s.Results[i].Dish;
-                await SaveDishAsync(member, d.Name, d.Servings, d.Ingredients.Select(x => (x.Food.Id, x.Grams)).ToList(), ct);
+                await SaveDishAsync(member, d.Name, d.Servings, d.Ingredients.Select(x => (x.Food.Id, x.Grams)).ToList(), ct, d.CookMinutes, d.Difficulty);
                 return new BotReply($"✅ «{d.Name}» сохранено в ваши блюда.",
                     new[] { Row(new InlineButton("⬅️ К списку", "r:back")) });
             }
@@ -409,7 +453,7 @@ public partial class BotUi
         {
             case "v":
             {
-                var sb = new StringBuilder($"📖 {dish.Name} ({dish.Servings} порц.)\n");
+                var sb = new StringBuilder($"📖 {dish.Name} ({dish.Servings} порц.)\n{TimeInfo(dish)}\n");
                 sb.AppendLine("На порцию: " + Nutr(dish.PerServing));
                 sb.AppendLine("Всего: " + Nutr(dish.Total));
                 sb.AppendLine("\nСостав:");
@@ -459,7 +503,8 @@ public partial class BotUi
     }
 
     private async Task<Dish> SaveDishAsync(
-        Member member, string name, int servings, IReadOnlyList<(int FoodId, double Grams)> ingredients, CancellationToken ct)
+        Member member, string name, int servings, IReadOnlyList<(int FoodId, double Grams)> ingredients, CancellationToken ct,
+        int minutes = 30, int difficulty = 2)
     {
         var old = await _db.Dishes.Where(d => d.HouseholdId == member.HouseholdId).ToListAsync(ct);
         var same = old.FirstOrDefault(d => d.Name.Equals(name, StringComparison.CurrentCultureIgnoreCase));
@@ -471,12 +516,14 @@ public partial class BotUi
             HouseholdId = member.HouseholdId,
             Name = name,
             Servings = servings,
+            CookMinutes = minutes,
+            Difficulty = difficulty,
             Ingredients = grouped.Select(g => new HouseholdDishIngredient { FoodId = g.FoodId, Grams = g.Grams }).ToList()
         });
         await _db.SaveChangesAsync(ct);
 
         var map = (await FoodsAsync(ct)).ToDictionary(f => f.Id);
-        return new Dish(name, servings, grouped.Select(g => new DishIngredient(map[g.FoodId], g.Grams)).ToList());
+        return new Dish(name, servings, grouped.Select(g => new DishIngredient(map[g.FoodId], g.Grams)).ToList(), minutes, difficulty);
     }
 
     private async Task<BotReply> AddHomeAsync(Session s, string? note, CancellationToken ct)
@@ -580,12 +627,21 @@ public partial class BotUi
             case "s":
             {
                 if (s.Draft.Count == 0) return AddHome(s, foods, null);
-                int servings = int.Parse(p[2], CultureInfo.InvariantCulture);
+                s.DraftServings = int.Parse(p[2], CultureInfo.InvariantCulture);
+                return TimeScreen($"Сколько времени готовится «{s.DraftName}»?", "a:tm", "a:done");
+            }
+            case "tm":
+                s.DraftMinutes = int.Parse(p[2], CultureInfo.InvariantCulture);
+                return DifficultyScreen("Насколько сложно готовить это блюдо?", "a:df", $"a:s:{s.DraftServings}");
+            case "df":
+            {
+                if (s.Draft.Count == 0) return AddHome(s, foods, null);
+                int difficulty = int.Parse(p[2], CultureInfo.InvariantCulture);
                 var member = await _legacy.EnsureMemberAsync(userId, userName, ct);
-                var dish = await SaveDishAsync(member, s.DraftName, servings, s.Draft.ToList(), ct);
+                var dish = await SaveDishAsync(member, s.DraftName, s.DraftServings, s.Draft.ToList(), ct, s.DraftMinutes, difficulty);
                 s.ResetDraft();
                 return new BotReply(
-                    $"✅ Блюдо «{dish.Name}» сохранено!\n\nНа порцию: {Nutr(dish.PerServing)}\nВсего ({dish.Servings} порц.): {Nutr(dish.Total)}",
+                    $"✅ Блюдо «{dish.Name}» сохранено!\n{TimeInfo(dish)}\n\nНа порцию: {Nutr(dish.PerServing)}\nВсего ({dish.Servings} порц.): {Nutr(dish.Total)}",
                     new[]
                     {
                         Row(new InlineButton("➕ Ещё блюдо", "a:again"), new InlineButton("📖 Мои блюда", "d:list"))

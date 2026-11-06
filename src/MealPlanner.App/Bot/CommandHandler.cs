@@ -231,7 +231,7 @@ public class CommandHandler
 
         return entities
             .Select(e => (e, new Dish(e.Name, e.Servings,
-                e.Ingredients.Select(i => new DishIngredient(map[i.FoodId], i.Grams)).ToList())))
+                e.Ingredients.Select(i => new DishIngredient(map[i.FoodId], i.Grams)).ToList(), e.CookMinutes, e.Difficulty)))
             .ToList();
     }
 
