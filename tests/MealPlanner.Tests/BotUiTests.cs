@@ -1,5 +1,6 @@
 using MealPlanner.App.Bot;
 using MealPlanner.App.Data;
+using MealPlanner.Core.Models;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
@@ -34,7 +35,10 @@ public class BotUiTests
     private static bool HasButtonText(BotReply r, string text) =>
         r.Buttons != null && r.Buttons.SelectMany(row => row).Any(b => b.Text.Contains(text));
 
-    private static async Task SaveDish(Ui ui, string name, params (string food, int grams)[] items)
+    private static Task SaveDish(Ui ui, string name, params (string food, int grams)[] items) =>
+        SaveDish(ui, name, 30, 2, items);
+
+    private static async Task SaveDish(Ui ui, string name, int minutes, int difficulty, params (string food, int grams)[] items)
     {
         await ui.Msg(Alice, "➕ Добавить блюдо");
         await ui.Msg(Alice, name);
@@ -46,6 +50,8 @@ public class BotUiTests
         }
         await ui.Tap(Alice, "a:done");
         await ui.Tap(Alice, "a:s:1");
+        await ui.Tap(Alice, $"a:tm:{minutes}");
+        await ui.Tap(Alice, $"a:df:{difficulty}");
     }
 
     [Fact]
@@ -76,8 +82,15 @@ public class BotUiTests
         var servings = await ui.Tap(Alice, "a:done");
         Assert.True(HasButton(servings, "a:s:2"));
 
-        var saved = await ui.Tap(Alice, "a:s:1");
+        var time = await ui.Tap(Alice, "a:s:1");
+        Assert.True(HasButton(time, "a:tm:20"));
+        var difficulty = await ui.Tap(Alice, "a:tm:20");
+        Assert.True(HasButton(difficulty, "a:df:1"));
+
+        var saved = await ui.Tap(Alice, "a:df:1");
         Assert.Contains("сохранено", saved.Text);
+        Assert.Contains("20 мин", saved.Text);
+        Assert.Contains("легко", saved.Text);
         Assert.Contains("ккал", saved.Text);
 
         var list = await ui.Msg(Alice, "📖 Мои блюда");
@@ -414,5 +427,109 @@ public class BotUiTests
         Assert.Contains("от 120 до 230", (await ui.Msg(Alice, "50")).Text);
         await ui.Msg(Alice, "165");
         Assert.Contains("от 30 до 300", (await ui.Msg(Alice, "abc")).Text);
+    }
+
+    [Fact]
+    public async Task EditDish_ChangesTimeAndDifficulty()
+    {
+        using var ui = new Ui();
+        await SaveDish(ui, "Каша", ("Рис", 100));
+        int dishId = (await ui.Db.Dishes.FirstAsync()).Id;
+
+        await ui.Tap(Alice, $"d:edit:{dishId}");
+        await ui.Tap(Alice, "e:tmv:15");
+        await ui.Tap(Alice, "e:dfv:1");
+        await ui.Tap(Alice, "e:save");
+
+        var dish = await ui.Db.Dishes.AsNoTracking().SingleAsync();
+        Assert.Equal(15, dish.CookMinutes);
+        Assert.Equal(1, dish.Difficulty);
+    }
+
+    [Fact]
+    public async Task IdeaFilters_QuickOnlyHidesSlowDishes()
+    {
+        using var ui = new Ui();
+        await SaveDish(ui, "Быстрая яичница", 10, 1, ("Яйца", 165));
+        await SaveDish(ui, "Долгая запечённая яичница", 90, 3, ("Яйца", 330));
+        int egg = await ui.Id("Яйца");
+
+        await ui.Msg(Alice, "🍳 Что приготовить");
+        await ui.Tap(Alice, $"i:t:{egg}:0");
+        var all = await ui.Tap(Alice, "i:done");
+        Assert.Contains("Быстрая яичница", all.Text);
+        Assert.Contains("Долгая запечённая яичница", all.Text);
+
+        var quick = await ui.Tap(Alice, "i:f:t");
+        Assert.Contains("Быстрая яичница", quick.Text);
+        Assert.DoesNotContain("Долгая запечённая яичница", quick.Text);
+        Assert.Contains("до 20 минут", quick.Text);
+
+        await ui.Tap(Alice, "i:f:t");
+        var easy = await ui.Tap(Alice, "i:f:d");
+        easy = await ui.Tap(Alice, "i:f:d");
+        Assert.Contains("только лёгкие", easy.Text);
+        Assert.DoesNotContain("Долгая запечённая яичница", easy.Text);
+    }
+
+    [Fact]
+    public async Task FitToNorm_SuggestsDishesThatFitRemainder()
+    {
+        using var ui = new Ui();
+        await SaveDish(ui, "Лёгкий обед", ("Куриная грудка", 150), ("Рис", 60));
+        await SaveDish(ui, "Огромная порция риса", ("Рис", 1000));
+        int rice = await ui.Id("Рис");
+
+        await ui.Tap(Alice, $"l:g:{rice}:300");
+        var day = await ui.Msg(Alice, "📅 Дневник");
+        Assert.True(HasButton(day, "t:fit"));
+
+        var fit = await ui.Tap(Alice, "t:fit");
+        Assert.Contains("Осталось до нормы: 920", fit.Text);
+        Assert.DoesNotContain("Огромная порция риса", fit.Text);
+        Assert.True(HasButton(fit, "t:fv:0"));
+
+        var view = await ui.Tap(Alice, "t:fv:0");
+        Assert.Contains("После этого останется", view.Text);
+
+        var logged = await ui.Tap(Alice, "t:fa:0");
+        Assert.Contains("Калории:", logged.Text);
+        Assert.Equal(2, await ui.Db.DiaryEntries.CountAsync());
+    }
+
+    [Fact]
+    public async Task FitToNorm_WhenNormReached_SaysSo()
+    {
+        using var ui = new Ui();
+        await ui.Tap(Alice, "t:g:800");
+        int rice = await ui.Id("Рис");
+        await ui.Tap(Alice, $"l:g:{rice}:220");
+
+        var fit = await ui.Tap(Alice, "t:fit");
+        Assert.Contains("Норма на сегодня выполнена", fit.Text);
+    }
+
+    [Fact]
+    public void FitScore_PrefersCalorieMatchAndPenalisesOvershoot()
+    {
+        var remaining = new Nutrients(600, 40, 20, 70);
+        var close = new Nutrients(580, 38, 18, 68);
+        var heavy = new Nutrients(580, 10, 60, 40);
+        Assert.True(BotUi.FitScore(close, remaining) < BotUi.FitScore(heavy, remaining));
+        Assert.True(BotUi.FitScore(close, remaining) < BotUi.FitScore(new Nutrients(200, 10, 5, 25), remaining));
+    }
+
+    [Fact]
+    public void SchemaUpgrade_AddsTimeAndDifficultyToOldDishesTable()
+    {
+        using var fx = new BotFixture();
+        fx.Db.Database.ExecuteSqlRaw("ALTER TABLE \"Dishes\" RENAME TO \"DishesOld\"");
+        fx.Db.Database.ExecuteSqlRaw("CREATE TABLE \"Dishes\" (\"Id\" INTEGER PRIMARY KEY AUTOINCREMENT, \"HouseholdId\" INTEGER NOT NULL, \"Name\" TEXT NOT NULL, \"Servings\" INTEGER NOT NULL)");
+
+        AppDbContext.Initialize(fx.Db);
+
+        fx.Db.Database.ExecuteSqlRaw("INSERT INTO \"Dishes\" (\"HouseholdId\", \"Name\", \"Servings\") VALUES (1, 'x', 1)");
+        Assert.Equal(30, fx.Db.Dishes.AsNoTracking().Single().CookMinutes);
+        Assert.Equal(2, fx.Db.Dishes.AsNoTracking().Single().Difficulty);
     }
 }
