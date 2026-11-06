@@ -27,6 +27,8 @@ public class HouseholdDish
     public int HouseholdId { get; set; }
     public string Name { get; set; } = string.Empty;
     public int Servings { get; set; } = 1;
+    public int CookMinutes { get; set; } = 30;
+    public int Difficulty { get; set; } = 2;
     public List<HouseholdDishIngredient> Ingredients { get; set; } = new();
 }
 

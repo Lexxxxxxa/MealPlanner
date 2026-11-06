@@ -7,9 +7,9 @@ public record DishIngredient(Food Food, double Grams)
 }
 
 /// <summary>
-/// Dish: name, number of servings and ingredients with mass
+/// Dish: name, servings, ingredients with mass, cooking time (minutes) and difficulty (1 easy, 2 medium, 3 hard)
 /// </summary>
-public record Dish(string Name, int Servings, IReadOnlyList<DishIngredient> Ingredients)
+public record Dish(string Name, int Servings, IReadOnlyList<DishIngredient> Ingredients, int CookMinutes = 30, int Difficulty = 2)
 {
     public Nutrients Total => Ingredients.Aggregate(Nutrients.Zero, (acc, i) => acc + i.Nutrients);
     public Nutrients PerServing => Total * (1.0 / Math.Max(1, Servings));

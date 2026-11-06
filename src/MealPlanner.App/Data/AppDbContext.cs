@@ -102,6 +102,11 @@ public class AppDbContext : DbContext
             try { db.Database.ExecuteSqlRaw($"ALTER TABLE \"MemberTargets\" ADD COLUMN {col}"); }
             catch (Exception ex) when (ex.ToString().Contains("duplicate column", StringComparison.OrdinalIgnoreCase)) { }
         }
+        foreach (var col in new[] { "\"CookMinutes\" INTEGER NOT NULL DEFAULT 30", "\"Difficulty\" INTEGER NOT NULL DEFAULT 2" })
+        {
+            try { db.Database.ExecuteSqlRaw($"ALTER TABLE \"Dishes\" ADD COLUMN {col}"); }
+            catch (Exception ex) when (ex.ToString().Contains("duplicate column", StringComparison.OrdinalIgnoreCase)) { }
+        }
         db.Database.ExecuteSqlRaw(@"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_MemberTargets_MemberId"" ON ""MemberTargets"" (""MemberId"")");
     }
 }

@@ -25,13 +25,32 @@ public static class TemplateDishes
         "Йогурт с мюсли: йогурт 200, мюсли 50, яблоко 1 шт; 1 порция"
     };
 
+    private static readonly Dictionary<string, (int Minutes, int Difficulty)> Meta = new()
+    {
+        ["Гречка с курицей"] = (30, 1),
+        ["Омлет с помидорами"] = (10, 1),
+        ["Борщ"] = (90, 3),
+        ["Паста с томатным соусом"] = (25, 1),
+        ["Плов с курицей"] = (60, 2),
+        ["Овсянка с бананом"] = (10, 1),
+        ["Чечевичный суп"] = (40, 1),
+        ["Сёмга с овощами"] = (35, 2),
+        ["Салат с тунцом"] = (15, 1),
+        ["Творожная запеканка"] = (50, 2),
+        ["Котлеты с пюре"] = (60, 2),
+        ["Овощное рагу"] = (45, 2),
+        ["Йогурт с мюсли"] = (5, 1)
+    };
+
     public static IReadOnlyList<Dish> Build(IReadOnlyList<Food> foods)
     {
         var dishes = new List<Dish>();
         foreach (var def in Definitions)
         {
             var parsed = DishParser.Parse(def, foods);
-            if (parsed.IsValid) dishes.Add(new Dish(parsed.Name, parsed.Servings, parsed.Ingredients));
+            if (!parsed.IsValid) continue;
+            var (minutes, difficulty) = Meta.TryGetValue(parsed.Name, out var m) ? m : (30, 2);
+            dishes.Add(new Dish(parsed.Name, parsed.Servings, parsed.Ingredients, minutes, difficulty));
         }
         return dishes;
     }
