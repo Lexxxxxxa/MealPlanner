@@ -18,8 +18,9 @@ public class Food
 
     public double MaxGrams { get; set; } = 400;
 
-    public Nutrients NutrientsFor(double grams) =>
-        new Nutrients(KcalPer100, ProteinPer100, FatPer100, CarbsPer100) * (grams / 100.0);
+    public Nutrients Per100 => new(KcalPer100, ProteinPer100, FatPer100, CarbsPer100);
+
+    public Nutrients NutrientsFor(double grams) => Per100 * (grams / 100.0);
 
     public double CostFor(double grams) => PricePer100 * grams / 100.0;
 }
