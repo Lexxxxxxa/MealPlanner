@@ -1,57 +1,12 @@
 using MealPlanner.Core.Models;
-using MealPlanner.Core.Parsing;
 
 namespace MealPlanner.Core.Data;
 
 /// <summary>
-/// Built-in dish ideas for the what to cook command when there are no own recipes yet
+/// Dishes of the built-in database as ideas for selection by available products
 /// </summary>
 public static class TemplateDishes
 {
-    public static readonly string[] Definitions =
-    {
-        "Гречка с курицей: гречка 80, куриная грудка 150, лук репчатый 40, масло подсолнечное 10; 1 порция",
-        "Омлет с помидорами: яйца 3 шт, молоко 100, помидоры 100, масло сливочное 10; 1 порция",
-        "Борщ: свёкла 200, картофель 300, капуста 200, морковь 100, лук репчатый 80, говядина 300, томатная паста 30, масло подсолнечное 20; 4 порции",
-        "Паста с томатным соусом: макароны 200, помидоры 300, чеснок 10, масло оливковое 20, сыр гауда 40; 2 порции",
-        "Плов с курицей: рис 200, куриное бедро 300, морковь 150, лук репчатый 100, масло подсолнечное 40; 3 порции",
-        "Овсянка с бананом: овсяные хлопья 60, молоко 200, банан 1 шт, мёд 10; 1 порция",
-        "Чечевичный суп: чечевица 150, картофель 200, морковь 100, лук репчатый 80, масло подсолнечное 15; 3 порции",
-        "Сёмга с овощами: сёмга 200, брокколи 200, картофель 300, масло оливковое 15; 2 порции",
-        "Салат с тунцом: тунец консервированный 120, огурцы 200, помидоры 200, масло оливковое 15, яйца 2 шт; 2 порции",
-        "Творожная запеканка: творог 400, яйца 2 шт, мука 40, сахар 30, сметана 50; 4 порции",
-        "Котлеты с пюре: картофель 400, фарш говяжий 300, лук репчатый 50, яйца 1 шт, молоко 80; 3 порции",
-        "Овощное рагу: кабачок 250, баклажан 200, перец болгарский 150, помидоры 200, лук репчатый 80, масло подсолнечное 20; 3 порции",
-        "Йогурт с мюсли: йогурт 200, мюсли 50, яблоко 1 шт; 1 порция"
-    };
-
-    private static readonly Dictionary<string, (int Minutes, int Difficulty)> Meta = new()
-    {
-        ["Гречка с курицей"] = (30, 1),
-        ["Омлет с помидорами"] = (10, 1),
-        ["Борщ"] = (90, 3),
-        ["Паста с томатным соусом"] = (25, 1),
-        ["Плов с курицей"] = (60, 2),
-        ["Овсянка с бананом"] = (10, 1),
-        ["Чечевичный суп"] = (40, 1),
-        ["Сёмга с овощами"] = (35, 2),
-        ["Салат с тунцом"] = (15, 1),
-        ["Творожная запеканка"] = (50, 2),
-        ["Котлеты с пюре"] = (60, 2),
-        ["Овощное рагу"] = (45, 2),
-        ["Йогурт с мюсли"] = (5, 1)
-    };
-
-    public static IReadOnlyList<Dish> Build(IReadOnlyList<Food> foods)
-    {
-        var dishes = new List<Dish>();
-        foreach (var def in Definitions)
-        {
-            var parsed = DishParser.Parse(def, foods);
-            if (!parsed.IsValid) continue;
-            var (minutes, difficulty) = Meta.TryGetValue(parsed.Name, out var m) ? m : (30, 2);
-            dishes.Add(new Dish(parsed.Name, parsed.Servings, parsed.Ingredients, minutes, difficulty));
-        }
-        return dishes;
-    }
+    public static IReadOnlyList<Dish> Build(IReadOnlyList<Food> foods) =>
+        DishCatalog.Build(foods).Select(c => c.Dish).ToList();
 }
