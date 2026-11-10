@@ -10,13 +10,22 @@ namespace MealPlanner.Core.Data;
 /// </summary>
 public static class FoodCatalog
 {
-    public static IReadOnlyList<Food> LoadSeed()
+    public static IReadOnlyList<Food> LoadSeed() => Parse(ReadResource("foods.csv"));
+
+    public static IReadOnlyList<Food> LoadFull()
+    {
+        var all = LoadSeed().Concat(Parse(ReadResource("foods_extra.csv"))).ToList();
+        for (int i = 0; i < all.Count; i++) all[i].Id = i + 1;
+        return all;
+    }
+
+    internal static string ReadResource(string fileName)
     {
         var asm = typeof(FoodCatalog).Assembly;
-        string resource = asm.GetManifestResourceNames().First(n => n.EndsWith("foods.csv"));
+        string resource = asm.GetManifestResourceNames().First(n => n.EndsWith(fileName));
         using var stream = asm.GetManifestResourceStream(resource)!;
         using var reader = new StreamReader(stream);
-        return Parse(reader.ReadToEnd());
+        return reader.ReadToEnd();
     }
 
     public static IReadOnlyList<Food> Parse(string csv)

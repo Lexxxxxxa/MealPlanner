@@ -8,6 +8,8 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Data\foods.csv" />
+    <EmbeddedResource Include="Data\foods_extra.csv" />
+    <EmbeddedResource Include="Data\dishes.txt" />
   </ItemGroup>
 
 </Project>
