@@ -3,7 +3,7 @@ using MealPlanner.Core.Models;
 
 namespace MealPlanner.App.Bot;
 
-public enum Step { None, AddName, AddCustomGrams, AddSearch, NewFoodValues, IdeaText, JoinCode,
+public enum Step { None, AddName, AddCustomGrams, NewFoodValues, IdeaText, JoinCode, SearchFood, DishSearch, OwnSearch,
     EditGrams, EditAddGrams, LogGrams, GoalText,
     ProfAge, ProfHeight, ProfWeight }
 
@@ -48,6 +48,11 @@ public class Session
     public HashSet<int> Selected { get; } = new();
     public List<ResultItem> Results { get; } = new();
     public bool QuickOnly { get; set; }
+    public char SearchCtx { get; set; } = 'a';
+    public string SearchQuery { get; set; } = string.Empty;
+    public string CatBack { get; set; } = "b:home";
+    public string CatQuery { get; set; } = string.Empty;
+    public string OwnQuery { get; set; } = string.Empty;
     public int MaxDifficulty { get; set; } = 3;
 
     public List<FitItem> Fit { get; } = new();
