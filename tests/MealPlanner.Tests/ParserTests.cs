@@ -62,12 +62,39 @@ public class ParserTests
 public class TemplateDishTests
 {
     [Fact]
-    public void AllTemplateDishesParse()
+    public void DishCatalog_ResolvesEveryProduct()
     {
-        var foods = MealPlanner.Core.Data.FoodCatalog.LoadSeed();
-        var built = MealPlanner.Core.Data.TemplateDishes.Build(foods);
+        var foods = MealPlanner.Core.Data.FoodCatalog.LoadFull();
 
-        Assert.Equal(MealPlanner.Core.Data.TemplateDishes.Definitions.Length, built.Count);
+        Assert.Empty(MealPlanner.Core.Data.DishCatalog.UnresolvedProducts(foods));
+        Assert.Equal(MealPlanner.Core.Data.DishCatalog.Count, MealPlanner.Core.Data.DishCatalog.Build(foods).Count);
+    }
+
+    [Fact]
+    public void DishCatalog_IsLargeAndConsistent()
+    {
+        var foods = MealPlanner.Core.Data.FoodCatalog.LoadFull();
+        var dishes = MealPlanner.Core.Data.DishCatalog.Build(foods);
+
+        Assert.True(dishes.Count >= 350);
+        Assert.Equal(dishes.Count, dishes.Select(d => d.Dish.Name.ToLowerInvariant()).Distinct().Count());
+        Assert.All(dishes, d =>
+        {
+            Assert.InRange(d.Dish.PerServing.Kcal, 20, 2500);
+            Assert.InRange(d.Dish.CookMinutes, 1, 240);
+            Assert.InRange(d.Dish.Difficulty, 1, 3);
+        });
+    }
+
+    [Fact]
+    public void FullFoodCatalog_HasUniqueNamesAndSequentialIds()
+    {
+        var foods = MealPlanner.Core.Data.FoodCatalog.LoadFull();
+
+        Assert.True(foods.Count >= 380);
+        Assert.Equal(foods.Count, foods.Select(f => f.Name.ToLowerInvariant()).Distinct().Count());
+        Assert.Equal(Enumerable.Range(1, foods.Count), foods.Select(f => f.Id));
+        Assert.All(foods, f => Assert.True(f.KcalPer100 >= 0 && f.MaxGrams > 0));
     }
 
     [Fact]

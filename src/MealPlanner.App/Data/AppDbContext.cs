@@ -60,9 +60,13 @@ public class AppDbContext : DbContext
     {
         db.Database.EnsureCreated();
         UpgradeSchema(db);
-        if (db.Foods.Any()) return;
 
-        db.Foods.AddRange(FoodCatalog.LoadSeed());
+        var existing = db.Foods.Select(f => f.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var missing = FoodCatalog.LoadFull().Where(f => !existing.Contains(f.Name)).ToList();
+        if (missing.Count == 0) return;
+
+        foreach (var food in missing) food.Id = 0;
+        db.Foods.AddRange(missing);
         db.SaveChanges();
     }
 
