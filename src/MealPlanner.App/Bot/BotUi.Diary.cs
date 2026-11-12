@@ -149,7 +149,7 @@ public partial class BotUi
             {
                 var cats = Categories(foods);
                 var rows = Rows(cats.Select((c, i) => new InlineButton(CatLabel(c), $"e:c:{i}")), 2);
-                rows.Add(Row(new InlineButton("⬅️ Назад", "e:home")));
+                rows.Add(Row(new InlineButton("🔎 Найти продукт", "e:find"), new InlineButton("⬅️ Назад", "e:home")));
                 return new BotReply("Какой продукт добавить?", rows);
             }
             case "c":
@@ -157,11 +157,16 @@ public partial class BotUi
                 var cats = Categories(foods);
                 int ci = int.Parse(p[2], CultureInfo.InvariantCulture);
                 if (ci < 0 || ci >= cats.Count) return EditScreen(s, foods, null);
-                var rows = Rows(foods.Where(f => f.Category == cats[ci]).OrderBy(f => f.Name)
-                    .Select(f => new InlineButton(f.Name, $"e:p:{f.Id}")), 2);
-                rows.Add(Row(new InlineButton("⬅️ Назад", "e:add")));
-                return new BotReply($"{CatLabel(cats[ci])}\nВыберите продукт:", rows);
+                var list = foods.Where(f => f.Category == cats[ci]).OrderBy(f => f.Name).ToList();
+                return FoodPage($"{CatLabel(cats[ci])} ({list.Count})\nВыберите продукт:", list, PageArg(p, 3),
+                    (f, _) => $"e:p:{f.Id}", pg => $"e:c:{ci}:{pg}",
+                    Row(new InlineButton("⬅️ Назад", "e:add"), new InlineButton("🔎 Найти", "e:find")));
             }
+            case "find":
+                s.SearchCtx = 'e';
+                s.Step = Step.SearchFood;
+                return new BotReply("Напишите название продукта или его часть, например: сыр");
+            case "q": return SearchReply(s, foods, PageArg(p, 2));
             case "p":
             {
                 int id = int.Parse(p[2], CultureInfo.InvariantCulture);
@@ -431,11 +436,16 @@ public partial class BotUi
             {
                 int ci = int.Parse(p[2], CultureInfo.InvariantCulture);
                 if (ci < 0 || ci >= cats.Count) goto default;
-                var rows = Rows(foods.Where(f => f.Category == cats[ci]).OrderBy(f => f.Name)
-                    .Select(f => new InlineButton(f.Name, $"l:p:{f.Id}")), 2);
-                rows.Add(Row(new InlineButton("⬅️ Назад", "l:home")));
-                return new BotReply($"{CatLabel(cats[ci])}\nЧто вы съели?", rows);
+                var list = foods.Where(f => f.Category == cats[ci]).OrderBy(f => f.Name).ToList();
+                return FoodPage($"{CatLabel(cats[ci])} ({list.Count})\nЧто вы съели?", list, PageArg(p, 3),
+                    (f, _) => $"l:p:{f.Id}", pg => $"l:c:{ci}:{pg}",
+                    Row(new InlineButton("⬅️ Назад", "l:home"), new InlineButton("🔎 Найти", "l:find")));
             }
+            case "find":
+                s.SearchCtx = 'l';
+                s.Step = Step.SearchFood;
+                return new BotReply("Напишите название продукта или его часть, например: сыр");
+            case "q": return SearchReply(s, foods, PageArg(p, 2));
             case "p":
             {
                 int id = int.Parse(p[2], CultureInfo.InvariantCulture);
@@ -461,7 +471,7 @@ public partial class BotUi
             default:
             {
                 var rows = Rows(cats.Select((c, i) => new InlineButton(CatLabel(c), $"l:c:{i}")), 2);
-                rows.Add(Row(new InlineButton("⬅️ Назад", "t:day")));
+                rows.Add(Row(new InlineButton("🔎 Найти продукт", "l:find"), new InlineButton("⬅️ Назад", "t:day")));
                 return new BotReply("Что вы съели? Выберите категорию:", rows);
             }
         }

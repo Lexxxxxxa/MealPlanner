@@ -22,12 +22,14 @@ public partial class BotUi
     public const string KeyPair = "Пара";
     public const string KeyHelp = "Помощь";
     public const string KeyDiary = "Дневник";
+    public const string KeyCatalog = "База блюд";
 
     public static readonly string[][] MainMenu =
     {
         new[] { "🍳 " + KeyIdea, "📖 " + KeyDishes },
-        new[] { "➕ " + KeyAdd, "📅 " + KeyDiary },
-        new[] { "👫 " + KeyPair, "❓ " + KeyHelp }
+        new[] { "📚 " + KeyCatalog, "➕ " + KeyAdd },
+        new[] { "📅 " + KeyDiary, "👫 " + KeyPair },
+        new[] { "❓ " + KeyHelp }
     };
 
     private static readonly string[] CategoryOrder =
@@ -81,7 +83,8 @@ public partial class BotUi
         }
 
         if (IsKey(t, KeyIdea)) return await IdeaHomeAsync(userId, userName, reset: true, ct);
-        if (IsKey(t, KeyDishes)) { session.Step = Step.None; return await DishListAsync(userId, userName, ct); }
+        if (IsKey(t, KeyDishes)) { session.Step = Step.None; session.OwnQuery = string.Empty; return await DishListAsync(userId, userName, ct); }
+        if (IsKey(t, KeyCatalog)) { session.Step = Step.None; return await CatalogHomeAsync(session, ct); }
         if (IsKey(t, KeyAdd))
         {
             session.ResetDraft();
@@ -104,8 +107,20 @@ public partial class BotUi
             case Step.AddCustomGrams:
                 return await CustomGramsAsync(session, t, ct);
 
-            case Step.AddSearch:
-                return await SearchAsync(session, t, ct);
+            case Step.SearchFood:
+                session.Step = Step.None;
+                session.SearchQuery = t;
+                return SearchReply(session, await FoodsAsync(ct), 0);
+
+            case Step.DishSearch:
+                session.Step = Step.None;
+                session.CatQuery = t;
+                return await CatalogSearchAsync(session, 0, ct);
+
+            case Step.OwnSearch:
+                session.Step = Step.None;
+                session.OwnQuery = t;
+                return await DishListAsync(userId, userName, ct);
 
             case Step.NewFoodValues:
                 return await CreateFoodAsync(session, t, ct);
@@ -149,6 +164,7 @@ public partial class BotUi
             case "a": return await AddCallbackAsync(userId, userName, s, p, ct);
             case "d": return await DishCallbackAsync(userId, userName, s, p, ct);
             case "r": return await ResultCallbackAsync(userId, userName, s, p, ct);
+            case "b": return await CatalogCallbackAsync(userId, userName, s, p, ct);
             case "e": return await EditCallbackAsync(userId, userName, s, p, ct);
             case "t": return await DiaryCallbackAsync(userId, userName, s, p, ct);
             case "l": return await LogCallbackAsync(userId, userName, s, p, ct);
@@ -164,7 +180,8 @@ public partial class BotUi
     private static BotReply Help() => new(
         "Как пользоваться:\n\n" +
         "🍳 Что приготовить — отметьте продукты, которые есть сейчас, и я подскажу блюда из вашей базы.\n" +
-        "📖 Мои блюда — все блюда с калориями.\n" +
+        "📖 Мои блюда — ваши сохранённые блюда с калориями, поиск по названию и продукту.\n" +
+        "📚 База блюд — около 400 готовых блюд по категориям: смотрите состав, сохраняйте в свои, записывайте в дневник.\n" +
         "➕ Добавить блюдо — выберите продукты кнопками и граммы, калории посчитаются сами.\n" +
         "✏️ В блюде можно изменить продукты и граммы, а «Готовлю» пересчитает калории по тому, что вы реально положили.\n" +
         "📅 Дневник — что вы съели за день: калории и БЖВ. Норма считается по вашему ИМТ, активности и цели (похудеть, держать вес или набрать).\n" +
@@ -210,24 +227,23 @@ public partial class BotUi
         }
 
         var rows = Rows(Categories(foods).Select((c, i) => new InlineButton(CatLabel(c), $"i:c:{i}")), 2);
-        rows.Add(Row(new InlineButton("✍️ Написать списком", "i:txt")));
+        rows.Add(Row(new InlineButton("🔎 Найти продукт", "i:find"), new InlineButton("✍️ Списком", "i:txt")));
         rows.Add(FilterRow(s));
         rows.Add(Row(new InlineButton("🗑 Сбросить", "i:reset"),
                      new InlineButton($"✅ Готово ({s.Selected.Count})", "i:done")));
         return new BotReply(sb.ToString(), rows);
     }
 
-    private static BotReply IdeaCategory(Session s, IReadOnlyList<Food> foods, int ci)
+    private static BotReply IdeaCategory(Session s, IReadOnlyList<Food> foods, int ci, int page = 0)
     {
         var cats = Categories(foods);
         if (ci < 0 || ci >= cats.Count) return IdeaHome(s, foods);
-        string cat = cats[ci];
-
-        var buttons = foods.Where(f => f.Category == cat).OrderBy(f => f.Name)
-            .Select(f => new InlineButton((s.Selected.Contains(f.Id) ? "✅ " : "") + f.Name, $"i:t:{f.Id}:{ci}"));
-        var rows = Rows(buttons, 2);
-        rows.Add(Row(new InlineButton("⬅️ Назад", "i:home"), new InlineButton($"✅ Готово ({s.Selected.Count})", "i:done")));
-        return new BotReply($"{CatLabel(cat)}\nНажмите на то, что есть:", rows);
+        var list = foods.Where(f => f.Category == cats[ci]).OrderBy(f => f.Name).ToList();
+        return FoodPage($"{CatLabel(cats[ci])} ({list.Count})\nНажмите на то, что есть:", list, page,
+            (f, pg) => $"i:t:{f.Id}:{ci}:{pg}", pg => $"i:c:{ci}:{pg}",
+            Row(new InlineButton("⬅️ Назад", "i:home"), new InlineButton("🔎 Найти", "i:find"),
+                new InlineButton($"✅ Готово ({s.Selected.Count})", "i:done")),
+            f => (s.Selected.Contains(f.Id) ? "✅ " : "") + f.Name);
     }
 
     private async Task<BotReply> IdeaCallbackAsync(long userId, string userName, Session s, string[] p, CancellationToken ct)
@@ -235,11 +251,22 @@ public partial class BotUi
         var foods = await FoodsAsync(ct);
         switch (p.Length > 1 ? p[1] : "")
         {
-            case "c": return IdeaCategory(s, foods, int.Parse(p[2], CultureInfo.InvariantCulture));
+            case "c": return IdeaCategory(s, foods, int.Parse(p[2], CultureInfo.InvariantCulture), PageArg(p, 3));
             case "t":
                 int id = int.Parse(p[2], CultureInfo.InvariantCulture);
                 if (!s.Selected.Add(id)) s.Selected.Remove(id);
-                return IdeaCategory(s, foods, int.Parse(p[3], CultureInfo.InvariantCulture));
+                return IdeaCategory(s, foods, int.Parse(p[3], CultureInfo.InvariantCulture), PageArg(p, 4));
+            case "find":
+                s.SearchCtx = 'i';
+                s.Step = Step.SearchFood;
+                return new BotReply("Напишите название продукта или его часть, например: сыр");
+            case "s":
+            {
+                int sid = int.Parse(p[2], CultureInfo.InvariantCulture);
+                if (!s.Selected.Add(sid)) s.Selected.Remove(sid);
+                return SearchReply(s, foods, PageArg(p, 3));
+            }
+            case "q": return SearchReply(s, foods, PageArg(p, 2));
             case "reset": s.Selected.Clear(); return IdeaHome(s, foods);
             case "home": return IdeaHome(s, foods);
             case "f":
@@ -289,7 +316,7 @@ public partial class BotUi
 
         var ownNames = own.Select(o => o.Model.Name.ToLowerInvariant()).ToHashSet();
         var templates = TemplateDishes.Build(foods).Where(t => !ownNames.Contains(t.Name.ToLowerInvariant()) && PassesFilter(s, t)).ToList();
-        var tmplTop = rec.Recommend(templates, pantry, ctx, 3)
+        var tmplTop = rec.Recommend(templates, pantry, ctx, 5)
             .Where(r => r.Coverage.IngredientShare >= 0.5).ToList();
 
         s.Results.Clear();
@@ -353,9 +380,9 @@ public partial class BotUi
         return string.Join(", ", parts);
     }
 
-    private static IReadOnlyList<InlineButton> FilterRow(Session s) => Row(
-        new InlineButton((s.QuickOnly ? "✅ " : "") + "⚡ До 20 мин", "i:f:t"),
-        new InlineButton(s.MaxDifficulty switch { 1 => "🔧 Только лёгкие", 2 => "🔧 Не сложные", _ => "🔧 Любая сложность" }, "i:f:d"));
+    private static IReadOnlyList<InlineButton> FilterRow(Session s, string prefix = "i") => Row(
+        new InlineButton((s.QuickOnly ? "✅ " : "") + "⚡ До 20 мин", $"{prefix}:f:t"),
+        new InlineButton(s.MaxDifficulty switch { 1 => "🔧 Только лёгкие", 2 => "🔧 Не сложные", _ => "🔧 Любая сложность" }, $"{prefix}:f:d"));
 
     private static readonly int[] MinutePresets = { 10, 15, 20, 30, 45, 60, 90 };
 
@@ -422,24 +449,20 @@ public partial class BotUi
         }
     }
 
-    private async Task<BotReply> DishListAsync(long userId, string userName, CancellationToken ct)
-    {
-        var member = await _legacy.EnsureMemberAsync(userId, userName, ct);
-        var foods = await FoodsAsync(ct);
-        var dishes = await _legacy.LoadDishesAsync(member.HouseholdId, foods, ct);
-
-        if (dishes.Count == 0)
-            return new BotReply("📖 В вашей базе пока нет блюд.\nНажмите «➕ Добавить блюдо» внизу или посмотрите идеи в «🍳 Что приготовить».");
-
-        var rows = Rows(dishes.Select(d => new InlineButton(
-            $"{d.Model.Name} · {d.Model.PerServing.Kcal:F0} ккал", $"d:v:{d.Entity.Id}")), 1);
-        return new BotReply($"📖 Ваши блюда ({dishes.Count}):\nНажмите на блюдо, чтобы увидеть состав.", rows);
-    }
-
     private async Task<BotReply> DishCallbackAsync(long userId, string userName, Session s, string[] p, CancellationToken ct)
     {
         string action = p.Length > 1 ? p[1] : "";
-        if (action == "list") return await DishListAsync(userId, userName, ct);
+        if (action == "list") return await DishListAsync(userId, userName, ct, PageArg(p, 2));
+        if (action == "find")
+        {
+            s.Step = Step.OwnSearch;
+            return new BotReply("Напишите название блюда или продукт, например: «борщ» или «курица»");
+        }
+        if (action == "clr")
+        {
+            s.OwnQuery = string.Empty;
+            return await DishListAsync(userId, userName, ct);
+        }
 
         var member = await _legacy.EnsureMemberAsync(userId, userName, ct);
         int id = p.Length > 2 ? int.Parse(p[2], CultureInfo.InvariantCulture) : 0;
@@ -555,16 +578,14 @@ public partial class BotUi
         return new BotReply(sb.ToString().TrimEnd(), rows);
     }
 
-    private static BotReply AddCategory(Session s, IReadOnlyList<Food> foods, int ci)
+    private static BotReply AddCategory(Session s, IReadOnlyList<Food> foods, int ci, int page = 0)
     {
         var cats = Categories(foods);
         if (ci < 0 || ci >= cats.Count) return AddHome(s, foods, null);
-        string cat = cats[ci];
-
-        var rows = Rows(foods.Where(f => f.Category == cat).OrderBy(f => f.Name)
-            .Select(f => new InlineButton(f.Name, $"a:p:{f.Id}")), 2);
-        rows.Add(Row(new InlineButton("⬅️ Назад", "a:home")));
-        return new BotReply($"{CatLabel(cat)}\nВыберите продукт:", rows);
+        var list = foods.Where(f => f.Category == cats[ci]).OrderBy(f => f.Name).ToList();
+        return FoodPage($"{CatLabel(cats[ci])} ({list.Count})\nВыберите продукт:", list, page,
+            (f, _) => $"a:p:{f.Id}", pg => $"a:c:{ci}:{pg}",
+            Row(new InlineButton("⬅️ Назад", "a:home"), new InlineButton("🔎 Найти", "a:find")));
     }
 
     private static BotReply GramsScreen(Food food)
@@ -585,7 +606,8 @@ public partial class BotUi
         switch (action)
         {
             case "home": s.Step = Step.None; return AddHome(s, foods, null);
-            case "c": return AddCategory(s, foods, int.Parse(p[2], CultureInfo.InvariantCulture));
+            case "c": return AddCategory(s, foods, int.Parse(p[2], CultureInfo.InvariantCulture), PageArg(p, 3));
+            case "q": return SearchReply(s, foods, PageArg(p, 2));
             case "p":
             {
                 var food = foods.FirstOrDefault(f => f.Id == int.Parse(p[2], CultureInfo.InvariantCulture));
@@ -607,7 +629,8 @@ public partial class BotUi
                 if (s.Draft.Count > 0) s.Draft.RemoveAt(s.Draft.Count - 1);
                 return AddHome(s, foods, null);
             case "find":
-                s.Step = Step.AddSearch;
+                s.SearchCtx = 'a';
+                s.Step = Step.SearchFood;
                 return new BotReply("Напишите название продукта (или его часть), например: сыр");
             case "new":
                 s.Step = Step.NewFoodValues;
@@ -674,34 +697,6 @@ public partial class BotUi
         s.Step = Step.None;
         s.Draft.Add((food.Id, grams.Value));
         return AddHome(s, foods, $"✔️ Добавлено: {food.Name} {grams.Value:F0} г");
-    }
-
-    private async Task<BotReply> SearchAsync(Session s, string query, CancellationToken ct)
-    {
-        s.Step = Step.None;
-        var foods = await FoodsAsync(ct);
-        string q = FoodMatcher.Normalize(query);
-
-        var hits = foods.Where(f => FoodMatcher.Normalize(f.Name).Contains(q)).OrderBy(f => f.Name).Take(8).ToList();
-        if (hits.Count == 0)
-        {
-            var one = FoodMatcher.Find(query, foods);
-            if (one != null) hits.Add(one);
-        }
-
-        if (hits.Count == 0)
-        {
-            s.NewFoodName = query.Trim();
-            return new BotReply($"Не нашла «{query.Trim()}». Можно добавить его самому.", new[]
-            {
-                Row(new InlineButton($"➕ Создать «{s.NewFoodName}»", "a:new")),
-                Row(new InlineButton("⬅️ Назад", "a:home"))
-            });
-        }
-
-        var rows = Rows(hits.Select(f => new InlineButton(f.Name, $"a:p:{f.Id}")), 2);
-        rows.Add(Row(new InlineButton("⬅️ Назад", "a:home")));
-        return new BotReply("Нашла. Выберите продукт:", rows);
     }
 
     private async Task<BotReply> CreateFoodAsync(Session s, string text, CancellationToken ct)
