@@ -532,4 +532,155 @@ public class BotUiTests
         Assert.Equal(30, fx.Db.Dishes.AsNoTracking().Single().CookMinutes);
         Assert.Equal(2, fx.Db.Dishes.AsNoTracking().Single().Difficulty);
     }
+
+    private static string? FirstData(BotReply r, string prefix) =>
+        r.Buttons?.SelectMany(row => row).FirstOrDefault(b => b.Data.StartsWith(prefix))?.Data;
+
+    [Fact]
+    public async Task Database_ContainsFullProductCatalogue()
+    {
+        using var ui = new Ui();
+
+        Assert.True(await ui.Db.Foods.CountAsync() >= 380);
+        Assert.True(await ui.Db.Foods.AnyAsync(f => f.Name == "Форель"));
+    }
+
+    [Fact]
+    public async Task Initialize_AddsMissingProductsToExistingDatabase()
+    {
+        using var fx = new BotFixture();
+        var trout = await fx.Db.Foods.FirstAsync(f => f.Name == "Форель");
+        fx.Db.Foods.Remove(trout);
+        await fx.Db.SaveChangesAsync();
+
+        AppDbContext.Initialize(fx.Db);
+
+        Assert.Equal(1, await fx.Db.Foods.CountAsync(f => f.Name == "Форель"));
+    }
+
+    [Fact]
+    public async Task ProductLists_ArePaged()
+    {
+        using var ui = new Ui();
+        var r = await ui.Msg(Alice, "🍳 Что приготовить");
+        var veg = r.Buttons!.SelectMany(row => row).First(b => b.Text.Contains("Овощи")).Data;
+
+        var page0 = await ui.Tap(Alice, veg);
+        Assert.Contains("Страница 1 из", page0.Text);
+        Assert.True(page0.Buttons!.SelectMany(row => row).Count() <= 20);
+        Assert.True(HasButton(page0, veg + ":1"));
+    }
+
+    [Fact]
+    public async Task IdeaSearch_FindsProductAndSelectsIt()
+    {
+        using var ui = new Ui();
+        await ui.Msg(Alice, "🍳 Что приготовить");
+        await ui.Tap(Alice, "i:find");
+        var r = await ui.Msg(Alice, "форел");
+        Assert.True(HasButtonText(r, "Форель"));
+
+        var pick = FirstData(r, "i:s:");
+        Assert.NotNull(pick);
+        var marked = await ui.Tap(Alice, pick!);
+        Assert.True(HasButtonText(marked, "✅ Форель"));
+    }
+
+    [Fact]
+    public async Task AddDishSearch_FindsProductInLargeCatalogue()
+    {
+        using var ui = new Ui();
+        await ui.Msg(Alice, "➕ Добавить блюдо");
+        await ui.Msg(Alice, "Рыба");
+        await ui.Tap(Alice, "a:find");
+        var r = await ui.Msg(Alice, "скумбр");
+
+        Assert.True(HasButtonText(r, "Скумбрия"));
+        Assert.True(HasButtonText(r, "Копчёная скумбрия"));
+    }
+
+    [Fact]
+    public async Task DishCatalog_BrowseViewSaveAndEat()
+    {
+        using var ui = new Ui();
+        var home = await ui.Msg(Alice, "📚 База блюд");
+        Assert.Contains("База блюд", home.Text);
+        Assert.True(HasButton(home, "b:c:0:0"));
+        Assert.True(HasButton(home, "b:find"));
+
+        var list = await ui.Tap(Alice, "b:c:0:0");
+        var view = FirstData(list, "b:v:");
+        Assert.NotNull(view);
+
+        var card = await ui.Tap(Alice, view!);
+        Assert.Contains("На порцию", card.Text);
+        string n = view!.Split(':')[2];
+
+        var saved = await ui.Tap(Alice, $"b:s:{n}");
+        Assert.Contains("сохранено", saved.Text);
+        Assert.Equal(1, await ui.Db.Dishes.CountAsync());
+
+        await ui.Tap(Alice, $"b:e:{n}");
+        var day = await ui.Tap(Alice, $"b:ate:{n}:1");
+        Assert.Contains("Калории:", day.Text);
+        Assert.Equal(1, await ui.Db.DiaryEntries.CountAsync());
+    }
+
+    [Fact]
+    public async Task DishCatalog_SearchByIngredientAndName()
+    {
+        using var ui = new Ui();
+        await ui.Msg(Alice, "📚 База блюд");
+        await ui.Tap(Alice, "b:find");
+
+        var byName = await ui.Msg(Alice, "борщ");
+        Assert.True(HasButtonText(byName, "Борщ"));
+
+        await ui.Tap(Alice, "b:find");
+        var byIngredient = await ui.Msg(Alice, "форель");
+        Assert.True(HasButtonText(byIngredient, "Стейк форели"));
+    }
+
+    [Fact]
+    public async Task DishCatalog_FiltersHideSlowDishes()
+    {
+        using var ui = new Ui();
+        await ui.Msg(Alice, "📚 База блюд");
+        await ui.Tap(Alice, "b:find");
+        var all = await ui.Msg(Alice, "борщ");
+        Assert.True(HasButtonText(all, "Борщ"));
+
+        await ui.Tap(Alice, "b:f:t");
+        await ui.Tap(Alice, "b:find");
+        var quick = await ui.Msg(Alice, "борщ");
+        Assert.False(HasButtonText(quick, "Борщ · "));
+    }
+
+    [Fact]
+    public async Task OwnDishes_SearchAndReset()
+    {
+        using var ui = new Ui();
+        await SaveDish(ui, "Каша овсяная", ("Овсяные хлопья", 60));
+        await SaveDish(ui, "Омлет", ("Яйца", 165));
+
+        await ui.Msg(Alice, "📖 Мои блюда");
+        await ui.Tap(Alice, "d:find");
+        var found = await ui.Msg(Alice, "яйца");
+        Assert.True(HasButtonText(found, "Омлет"));
+        Assert.False(HasButtonText(found, "Каша овсяная"));
+        Assert.True(HasButton(found, "d:clr"));
+
+        var all = await ui.Tap(Alice, "d:clr");
+        Assert.True(HasButtonText(all, "Каша овсяная"));
+    }
+
+    [Fact]
+    public async Task MainMenu_HasCatalogAndDiaryButtons()
+    {
+        var keys = BotUi.MainMenu.SelectMany(r => r).ToList();
+
+        Assert.Contains("📚 База блюд", keys);
+        Assert.Contains("📅 Дневник", keys);
+        await Task.CompletedTask;
+    }
 }
