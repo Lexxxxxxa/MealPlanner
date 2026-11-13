@@ -1,5 +1,6 @@
 using MealPlanner.App.Bot;
 using MealPlanner.App.Data;
+using MealPlanner.Core.Data;
 using MealPlanner.Core.Models;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
@@ -584,6 +585,33 @@ public class BotUiTests
         Assert.NotNull(pick);
         var marked = await ui.Tap(Alice, pick!);
         Assert.True(HasButtonText(marked, "✅ Форель"));
+    }
+
+    [Fact]
+    public async Task Idea_WithOneProduct_OffersDishesWithShopping()
+    {
+        using var ui = new Ui();
+        await ui.Msg(Alice, "🍳 Что приготовить");
+        await ui.Tap(Alice, "i:find");
+        var r = await ui.Msg(Alice, "картофел");
+        var pick = FirstData(r, "i:s:");
+        Assert.NotNull(pick);
+        await ui.Tap(Alice, pick!);
+
+        var res = await ui.Tap(Alice, "i:done");
+        Assert.Contains("докупить", res.Text);
+        Assert.NotNull(FirstData(res, "r:v:"));
+        Assert.True(HasButtonText(res, "Только из моих продуктов"));
+
+        var back = await ui.Tap(Alice, "i:m");
+        Assert.DoesNotContain("докупить)", back.Text);
+    }
+
+    [Fact]
+    public void CategoryLabels_HaveIcons()
+    {
+        foreach (var c in DishCatalog.Categories)
+            Assert.DoesNotContain("🍴", BotUi.LabelFor(c));
     }
 
     [Fact]

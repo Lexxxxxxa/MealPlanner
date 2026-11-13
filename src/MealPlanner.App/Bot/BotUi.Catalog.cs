@@ -25,7 +25,7 @@ public partial class BotUi
         s.CatBack = "b:home";
         var items = await CatalogAsync(s, ct);
         var cats = DishCatalog.Categories;
-        var rows = Rows(cats.Select((c, i) => new InlineButton($"{c} ({items.Count(x => x.Item.Category == c)})", $"b:c:{i}:0")), 2);
+        var rows = Rows(cats.Select((c, i) => new InlineButton($"{CatLabel(c)} ({items.Count(x => x.Item.Category == c)})", $"b:c:{i}:0")), 2);
         rows.Add(FilterRow(s, "b"));
         rows.Add(Row(new InlineButton("🔎 Найти блюдо", "b:find"), new InlineButton("🎲 Случайное", "b:rnd")));
         string filters = s.QuickOnly || s.MaxDifficulty < 3 ? $"\nФильтры: {FilterText(s)}" : "";
@@ -38,7 +38,7 @@ public partial class BotUi
         if (ci < 0 || ci >= cats.Count) return await CatalogHomeAsync(s, ct);
         var items = (await CatalogAsync(s, ct)).Where(x => x.Item.Category == cats[ci]).ToList();
         s.CatBack = $"b:c:{ci}:{page}";
-        return DishPage($"📚 {cats[ci]} ({items.Count})", items, page, pg => $"b:c:{ci}:{pg}",
+        return DishPage($"{CatLabel(cats[ci])} ({items.Count})", items, page, pg => $"b:c:{ci}:{pg}",
             new[] { FilterRow(s, "b"), Row(new InlineButton("⬅️ К категориям", "b:home"), new InlineButton("🔎 Найти", "b:find")) });
     }
 

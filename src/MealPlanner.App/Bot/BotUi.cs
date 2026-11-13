@@ -41,7 +41,12 @@ public partial class BotUi
     private static readonly Dictionary<string, string> CategoryEmoji = new()
     {
         ["Мясо и рыба"] = "🥩", ["Молочные и яйца"] = "🥛", ["Овощи"] = "🥦", ["Крупы и хлеб"] = "🍚",
-        ["Бобовые"] = "🫘", ["Фрукты"] = "🍎", ["Жиры и орехи"] = "🧈", ["Сладкое"] = "🍯", ["Свои продукты"] = "⭐"
+        ["Бобовые"] = "🫘", ["Фрукты"] = "🍎", ["Жиры и орехи"] = "🥜", ["Сладкое"] = "🍯", ["Свои продукты"] = "⭐",
+        ["Хлеб и выпечка"] = "🍞", ["Птица"] = "🍗", ["Рыба и морепродукты"] = "🐟", ["Колбасы и деликатесы"] = "🥓",
+        ["Грибы"] = "🍄", ["Зелень и специи"] = "🌿", ["Соусы и приправы"] = "🧂", ["Напитки"] = "🥤", ["Консервы"] = "🥫",
+        ["Завтраки"] = "🍳", ["Супы"] = "🍲", ["Салаты"] = "🥗", ["Мясные блюда"] = "🥩", ["Блюда из птицы"] = "🍗",
+        ["Овощные блюда"] = "🥕", ["Каши и гарниры"] = "🥣", ["Паста и лапша"] = "🍝", ["Бобовые и тофу"] = "🫘",
+        ["Выпечка"] = "🥐", ["Десерты"] = "🍰", ["Закуски и бутерброды"] = "🥪", ["Напитки и смузи"] = "🥤", ["Быстрые блюда"] = "⚡"
     };
 
     private static readonly int[] GramPresets = { 50, 100, 150, 200, 250, 300, 400, 500 };
@@ -195,8 +200,10 @@ public partial class BotUi
             .OrderBy(c => { int i = Array.IndexOf(CategoryOrder, c); return i < 0 ? 99 : i; })
             .ToList();
 
+    public static string LabelFor(string cat) => CatLabel(cat);
+
     private static string CatLabel(string cat) =>
-        (CategoryEmoji.TryGetValue(cat, out var e) ? e : "🍽") + " " + cat;
+        (CategoryEmoji.TryGetValue(cat, out var e) ? e : "🍴") + " " + cat;
 
     private static IReadOnlyList<IReadOnlyList<InlineButton>> Grid(IEnumerable<InlineButton> buttons, int perRow) =>
         buttons.Chunk(perRow).Select(c => (IReadOnlyList<InlineButton>)c.ToList()).ToList();
@@ -212,7 +219,7 @@ public partial class BotUi
     {
         var s = _sessions.Get(userId);
         s.Step = Step.None;
-        if (reset) { s.Selected.Clear(); s.Results.Clear(); }
+        if (reset) { s.Selected.Clear(); s.Results.Clear(); s.IdeaBuy = false; }
         var foods = await FoodsAsync(ct);
         return IdeaHome(s, foods);
     }
@@ -267,7 +274,10 @@ public partial class BotUi
                 return SearchReply(s, foods, PageArg(p, 3));
             }
             case "q": return SearchReply(s, foods, PageArg(p, 2));
-            case "reset": s.Selected.Clear(); return IdeaHome(s, foods);
+            case "reset": s.Selected.Clear(); s.IdeaBuy = false; return IdeaHome(s, foods);
+            case "m":
+                s.IdeaBuy = !s.IdeaBuy;
+                return s.Selected.Count == 0 ? IdeaHome(s, foods) : await IdeaResultsAsync(userId, userName, s, foods, null, ct);
             case "home": return IdeaHome(s, foods);
             case "f":
                 if (p[2] == "t") s.QuickOnly = !s.QuickOnly;
@@ -311,16 +321,16 @@ public partial class BotUi
         var rec = new SmartRecommender();
         var ctx = new RecommendationContext();
 
-        var ownTop = rec.Recommend(own.Select(o => o.Model).ToList(), pantry, ctx, 4)
-            .Where(r => r.Coverage.IngredientShare >= 0.5).ToList();
+        var ownTop = PickIdeas(own.Select(o => o.Model).ToList(), s, pantry, ctx, rec, s.IdeaBuy ? 3 : 4);
 
         var ownNames = own.Select(o => o.Model.Name.ToLowerInvariant()).ToHashSet();
         var templates = TemplateDishes.Build(foods).Where(t => !ownNames.Contains(t.Name.ToLowerInvariant()) && PassesFilter(s, t)).ToList();
-        var tmplTop = rec.Recommend(templates, pantry, ctx, 5)
-            .Where(r => r.Coverage.IngredientShare >= 0.5).ToList();
+        var tmplTop = PickIdeas(templates, s, pantry, ctx, rec, s.IdeaBuy ? 6 : 5);
 
         s.Results.Clear();
-        var sb = new StringBuilder("🍽 Вот что можно приготовить:\n");
+        var sb = new StringBuilder(s.IdeaBuy
+            ? "🛒 Блюда с вашими продуктами (недостающее придётся докупить):\n"
+            : "🍽 Вот что можно приготовить из ваших продуктов:\n");
         if (s.QuickOnly || s.MaxDifficulty < 3) sb.AppendLine("Фильтры: " + FilterText(s));
         if (unknown is { Count: > 0 }) sb.AppendLine("(не нашла: " + string.Join(", ", unknown) + ")");
         sb.AppendLine();
@@ -348,20 +358,46 @@ public partial class BotUi
             }
         }
 
+        if (n == 0 && !s.IdeaBuy)
+        {
+            s.IdeaBuy = true;
+            var buy = await IdeaResultsAsync(userId, userName, s, foods, unknown, ct);
+            return buy with { Text = "Только из выбранных продуктов блюдо не собрать. Вот блюда, где они используются, часть ингредиентов нужно докупить 🛒\n\n" + buy.Text };
+        }
+
         if (n == 0)
         {
+            s.IdeaBuy = false;
             var home = IdeaHome(s, foods);
             return home with { Text = "Из этих продуктов ничего подходящего не нашлось 😔 Добавьте ещё продуктов.\n\n" + home.Text };
         }
 
         sb.AppendLine("\nНажмите номер, чтобы посмотреть состав.");
-        var rows = new List<IReadOnlyList<InlineButton>>
-        {
-            Row(Enumerable.Range(1, n).Select(i => new InlineButton(i.ToString(), $"r:v:{i - 1}")).ToArray()),
-            FilterRow(s),
-            Row(new InlineButton("🔄 Другие продукты", "r:again"))
-        };
+        var rows = new List<IReadOnlyList<InlineButton>>();
+        rows.AddRange(Rows(Enumerable.Range(1, n).Select(i => new InlineButton(i.ToString(), $"r:v:{i - 1}")), 5));
+        rows.Add(FilterRow(s));
+        rows.Add(Row(new InlineButton(s.IdeaBuy ? "✅ Только из моих продуктов" : "🛒 С докупкой", "i:m")));
+        rows.Add(Row(new InlineButton("🔄 Другие продукты", "r:again")));
         return new BotReply(sb.ToString().TrimEnd(), rows);
+    }
+
+    private static List<DishRecommendation> PickIdeas(
+        IReadOnlyList<Dish> dishes, Session s, IReadOnlyDictionary<int, double> pantry,
+        RecommendationContext ctx, SmartRecommender rec, int top)
+    {
+        if (!s.IdeaBuy)
+            return rec.Recommend(dishes, pantry, ctx, top).Where(r => r.Coverage.IngredientShare >= 0.5).ToList();
+
+        return dishes
+            .Select(d => (Dish: d, Used: d.Ingredients.Count(i => s.Selected.Contains(i.Food.Id)), Cover: CoverageInfo.Analyze(d, pantry)))
+            .Where(x => x.Used > 0)
+            .OrderByDescending(x => x.Used)
+            .ThenBy(x => x.Cover.Missing.Count)
+            .ThenBy(x => x.Cover.MissingCost)
+            .ThenBy(x => x.Dish.Name, StringComparer.Ordinal)
+            .Take(top)
+            .Select(x => new DishRecommendation(x.Dish, x.Used, x.Cover))
+            .ToList();
     }
 
     private static bool PassesFilter(Session s, Dish d) =>
@@ -415,7 +451,7 @@ public partial class BotUi
         var foods = await FoodsAsync(ct);
         switch (p.Length > 1 ? p[1] : "")
         {
-            case "again": return IdeaHome(s, foods);
+            case "again": s.IdeaBuy = false; return IdeaHome(s, foods);
             case "back": return await IdeaResultsAsync(userId, userName, s, foods, null, ct);
             case "v":
             {

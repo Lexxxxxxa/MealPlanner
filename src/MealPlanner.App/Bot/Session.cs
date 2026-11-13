@@ -48,6 +48,7 @@ public class Session
     public HashSet<int> Selected { get; } = new();
     public List<ResultItem> Results { get; } = new();
     public bool QuickOnly { get; set; }
+    public bool IdeaBuy { get; set; }
     public char SearchCtx { get; set; } = 'a';
     public string SearchQuery { get; set; } = string.Empty;
     public string CatBack { get; set; } = "b:home";
