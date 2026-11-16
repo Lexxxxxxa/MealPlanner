@@ -1,4 +1,3 @@
-using MealPlanner.Core.Data;
 using MealPlanner.Core.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -54,63 +53,5 @@ public class AppDbContext : DbContext
 
         b.Entity<DiaryEntry>(e => e.HasIndex(d => new { d.MemberId, d.Date }));
         b.Entity<MemberTarget>(e => e.HasIndex(t => t.MemberId).IsUnique());
-    }
-
-    public static void Initialize(AppDbContext db)
-    {
-        db.Database.EnsureCreated();
-        UpgradeSchema(db);
-
-        var existing = db.Foods.Select(f => f.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var missing = FoodCatalog.LoadFull().Where(f => !existing.Contains(f.Name)).ToList();
-        if (missing.Count == 0) return;
-
-        foreach (var food in missing) food.Id = 0;
-        db.Foods.AddRange(missing);
-        db.SaveChanges();
-    }
-
-    private static void UpgradeSchema(AppDbContext db)
-    {
-        db.Database.ExecuteSqlRaw(@"CREATE TABLE IF NOT EXISTS ""DiaryEntries"" (
-            ""Id"" INTEGER NOT NULL CONSTRAINT ""PK_DiaryEntries"" PRIMARY KEY AUTOINCREMENT,
-            ""MemberId"" INTEGER NOT NULL,
-            ""Date"" TEXT NOT NULL,
-            ""Label"" TEXT NOT NULL,
-            ""Kcal"" REAL NOT NULL,
-            ""Protein"" REAL NOT NULL,
-            ""Fat"" REAL NOT NULL,
-            ""Carbs"" REAL NOT NULL,
-            ""CreatedUtc"" TEXT NOT NULL)");
-        db.Database.ExecuteSqlRaw(@"CREATE INDEX IF NOT EXISTS ""IX_DiaryEntries_MemberId_Date"" ON ""DiaryEntries"" (""MemberId"", ""Date"")");
-        db.Database.ExecuteSqlRaw(@"CREATE TABLE IF NOT EXISTS ""MemberTargets"" (
-            ""Id"" INTEGER NOT NULL CONSTRAINT ""PK_MemberTargets"" PRIMARY KEY AUTOINCREMENT,
-            ""MemberId"" INTEGER NOT NULL,
-            ""Kcal"" REAL NOT NULL,
-            ""HasProfile"" INTEGER NOT NULL DEFAULT 0,
-            ""IsManual"" INTEGER NOT NULL DEFAULT 0,
-            ""Sex"" INTEGER NOT NULL DEFAULT 0,
-            ""AgeYears"" INTEGER NOT NULL DEFAULT 30,
-            ""HeightCm"" REAL NOT NULL DEFAULT 170,
-            ""WeightKg"" REAL NOT NULL DEFAULT 70,
-            ""Activity"" REAL NOT NULL DEFAULT 1.375,
-            ""Goal"" INTEGER NOT NULL DEFAULT 1)");
-        foreach (var col in new[]
-        {
-            "\"HasProfile\" INTEGER NOT NULL DEFAULT 0", "\"IsManual\" INTEGER NOT NULL DEFAULT 0",
-            "\"Sex\" INTEGER NOT NULL DEFAULT 0", "\"AgeYears\" INTEGER NOT NULL DEFAULT 30",
-            "\"HeightCm\" REAL NOT NULL DEFAULT 170", "\"WeightKg\" REAL NOT NULL DEFAULT 70",
-            "\"Activity\" REAL NOT NULL DEFAULT 1.375", "\"Goal\" INTEGER NOT NULL DEFAULT 1"
-        })
-        {
-            try { db.Database.ExecuteSqlRaw($"ALTER TABLE \"MemberTargets\" ADD COLUMN {col}"); }
-            catch (Exception ex) when (ex.ToString().Contains("duplicate column", StringComparison.OrdinalIgnoreCase)) { }
-        }
-        foreach (var col in new[] { "\"CookMinutes\" INTEGER NOT NULL DEFAULT 30", "\"Difficulty\" INTEGER NOT NULL DEFAULT 2" })
-        {
-            try { db.Database.ExecuteSqlRaw($"ALTER TABLE \"Dishes\" ADD COLUMN {col}"); }
-            catch (Exception ex) when (ex.ToString().Contains("duplicate column", StringComparison.OrdinalIgnoreCase)) { }
-        }
-        db.Database.ExecuteSqlRaw(@"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_MemberTargets_MemberId"" ON ""MemberTargets"" (""MemberId"")");
     }
 }

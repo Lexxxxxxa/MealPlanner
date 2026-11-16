@@ -24,7 +24,7 @@ var allowed = (Environment.GetEnvironmentVariable("ALLOWED_USER_IDS") ?? string.
 var options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite($"Data Source={dbPath}").Options;
 using (var initDb = new AppDbContext(options))
 {
-    AppDbContext.Initialize(initDb);
+    DatabaseInitializer.Run(initDb);
 }
 
 var sessions = new SessionStore();
