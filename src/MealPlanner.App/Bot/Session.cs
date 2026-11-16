@@ -3,8 +3,8 @@ using MealPlanner.Core.Models;
 
 namespace MealPlanner.App.Bot;
 
-public enum Step { None, AddName, AddCustomGrams, NewFoodValues, IdeaText, JoinCode, SearchFood, DishSearch, OwnSearch,
-    EditGrams, EditAddGrams, LogGrams, GoalText,
+public enum Step { None, AddName, AddInstructions, AddCustomGrams, NewFoodValues, IdeaText, JoinCode, SearchFood, DishSearch, OwnSearch,
+    EditGrams, EditAddGrams, EditInstructions, LogGrams, GoalText,
     ProfAge, ProfHeight, ProfWeight }
 
 /// <summary>
@@ -44,6 +44,7 @@ public class Session
     public string NewFoodName { get; set; } = string.Empty;
     public int DraftServings { get; set; } = 1;
     public int DraftMinutes { get; set; } = 30;
+    public int DraftDifficulty { get; set; } = 2;
 
     public HashSet<int> Selected { get; } = new();
     public List<ResultItem> Results { get; } = new();
@@ -65,6 +66,7 @@ public class Session
     public int EditIndex { get; set; }
     public int EditMinutes { get; set; } = 30;
     public int EditDifficulty { get; set; } = 2;
+    public string EditInstructions { get; set; } = string.Empty;
     public int EditPendingFoodId { get; set; }
     public List<(int FoodId, double Grams)> Items { get; } = new();
     public Dictionary<int, double> Recipe { get; } = new();
@@ -82,6 +84,7 @@ public class Session
         NewFoodName = string.Empty;
         DraftServings = 1;
         DraftMinutes = 30;
+        DraftDifficulty = 2;
     }
 }
 

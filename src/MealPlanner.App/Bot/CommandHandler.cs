@@ -2,18 +2,18 @@ using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using MealPlanner.App.Data;
+using MealPlanner.App.Services;
 using MealPlanner.Core.Data;
 using MealPlanner.Core.Models;
 using MealPlanner.Core.Parsing;
 using MealPlanner.Core.Planning;
 using MealPlanner.Core.Recommendation;
-using Microsoft.EntityFrameworkCore;
 
 namespace MealPlanner.App.Bot;
 
 /// <summary>
-/// Bot command logic independent of Telegram: takes message text and returns reply text
-/// This allows testing the bot without a network
+/// Text commands of the bot (/dish, /have, /menu and so on), independent of Telegram: takes text and returns reply text
+/// The command registry is a name-to-handler table, so a new command is added without changing the dispatcher
 /// </summary>
 public class CommandHandler
 {
@@ -22,50 +22,55 @@ public class CommandHandler
         $@"^(?<name>.+?)\s+(?<k>{Num})\s+(?<p>{Num})\s+(?<f>{Num})\s+(?<c>{Num})(?:\s+(?<price>{Num}))?$",
         RegexOptions.Compiled);
 
-    private readonly AppDbContext _db;
+    private record Call(Member Member, string Arg, IReadOnlyList<Food> Foods);
 
-    public CommandHandler(AppDbContext db) => _db = db;
+    private delegate Task<string> Handler(Call call, CancellationToken ct);
+
+    private readonly AppServices _s;
+    private readonly Dictionary<string, Handler> _commands = new();
+
+    public CommandHandler(AppServices services)
+    {
+        _s = services;
+        Register(new[] { "/start" }, (c, _) => Task.FromResult(Welcome(c.Member)));
+        Register(new[] { "/help", "/помощь" }, (_, _) => Task.FromResult(Help()));
+        Register(new[] { "/food", "/продукт" }, (c, ct) => AddFoodAsync(c.Arg, ct));
+        Register(new[] { "/dish", "/блюдо" }, AddDishAsync);
+        Register(new[] { "/calc", "/калории" }, (c, _) => Task.FromResult(Calc(c.Arg, c.Foods)));
+        Register(new[] { "/dishes", "/блюда" }, ListDishesAsync);
+        Register(new[] { "/delete", "/удалить" }, DeleteDishAsync);
+        Register(new[] { "/have", "/есть" }, (c, ct) => ChangePantryAsync(c, replace: false, ct));
+        Register(new[] { "/set", "/установить" }, (c, ct) => ChangePantryAsync(c, replace: true, ct));
+        Register(new[] { "/pantry", "/запасы" }, ShowPantryAsync);
+        Register(new[] { "/cooked", "/приготовил" }, CookedAsync);
+        Register(new[] { "/cook", "/приготовить" }, CookAsync);
+        Register(new[] { "/idea", "/идея" }, IdeaAsync);
+        Register(new[] { "/menu", "/меню" }, MenuAsync);
+    }
+
+    private void Register(string[] names, Handler handler)
+    {
+        foreach (var name in names) _commands[name] = handler;
+    }
 
     public async Task<string> HandleAsync(long userId, string userName, string text, CancellationToken ct = default)
     {
         var (cmd, arg) = Split(text);
-
         if (cmd == "/join") return await JoinAsync(userId, userName, arg, ct);
 
-        var member = await EnsureMemberAsync(userId, userName, ct);
-        var foods = await _db.Foods.AsNoTracking().ToListAsync(ct);
+        var member = await _s.Households.EnsureMemberAsync(userId, userName, ct);
+        var foods = await _s.Foods.ListAsync(ct);
+        return _commands.TryGetValue(cmd, out var handler)
+            ? await handler(new Call(member, arg, foods), ct)
+            : "Неизвестная команда.\n\n" + Help();
+    }
 
-        switch (cmd)
-        {
-            case "/start": return Welcome(member);
-            case "/help":
-            case "/помощь": return Help();
-            case "/food":
-            case "/продукт": return await AddFoodAsync(arg, foods, ct);
-            case "/dish":
-            case "/блюдо": return await AddDishAsync(member, arg, foods, ct);
-            case "/calc":
-            case "/калории": return Calc(arg, foods);
-            case "/dishes":
-            case "/блюда": return await ListDishesAsync(member, foods, ct);
-            case "/delete":
-            case "/удалить": return await DeleteDishAsync(member, arg, ct);
-            case "/have":
-            case "/есть": return await ChangePantryAsync(member, arg, foods, replace: false, ct);
-            case "/set":
-            case "/установить": return await ChangePantryAsync(member, arg, foods, replace: true, ct);
-            case "/pantry":
-            case "/запасы": return await ShowPantryAsync(member, ct);
-            case "/cooked":
-            case "/приготовил": return await CookedAsync(member, arg, foods, ct);
-            case "/cook":
-            case "/приготовить": return await CookAsync(member, arg, foods, ct);
-            case "/idea":
-            case "/идея": return await IdeaAsync(member, foods, ct);
-            case "/menu":
-            case "/меню": return await MenuAsync(member, arg, foods, ct);
-            default: return "Неизвестная команда.\n\n" + Help();
-        }
+    public async Task<string> JoinAsync(long userId, string userName, string code, CancellationToken ct)
+    {
+        var result = await _s.Households.JoinAsync(userId, userName, code, ct);
+        return result.Found
+            ? $"Готово! Вы в общем домохозяйстве {result.Code}. Участников: {result.MemberCount}. Блюда и запасы теперь общие."
+            : "Домохозяйство с таким кодом не найдено. Код выглядит как ABC123 (его показывает /start).";
     }
 
     internal static (string Cmd, string Arg) Split(string text)
@@ -85,46 +90,6 @@ public class CommandHandler
     private static double ParseNum(string s) =>
         double.Parse(s.Replace(',', '.'), CultureInfo.InvariantCulture);
 
-    internal async Task<Member> EnsureMemberAsync(long userId, string userName, CancellationToken ct)
-    {
-        var m = await _db.Members.Include(x => x.Household)
-            .FirstOrDefaultAsync(x => x.TelegramUserId == userId, ct);
-        if (m != null) return m;
-
-        var household = new Household { Code = await NewCodeAsync(ct) };
-        m = new Member { TelegramUserId = userId, Name = userName, Household = household };
-        _db.Members.Add(m);
-        await _db.SaveChangesAsync(ct);
-        return m;
-    }
-
-    private async Task<string> NewCodeAsync(CancellationToken ct)
-    {
-        const string alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-        while (true)
-        {
-            string code = new(Enumerable.Range(0, 6).Select(_ => alphabet[Random.Shared.Next(alphabet.Length)]).ToArray());
-            if (!await _db.Households.AnyAsync(h => h.Code == code, ct)) return code;
-        }
-    }
-
-    internal async Task<string> JoinAsync(long userId, string userName, string code, CancellationToken ct)
-    {
-        code = code.Trim().ToUpperInvariant();
-        var household = await _db.Households.FirstOrDefaultAsync(h => h.Code == code, ct);
-        if (household is null) return "Домохозяйство с таким кодом не найдено. Код выглядит как ABC123 (его показывает /start).";
-
-        var m = await _db.Members.FirstOrDefaultAsync(x => x.TelegramUserId == userId, ct);
-        if (m is null)
-            _db.Members.Add(new Member { TelegramUserId = userId, Name = userName, HouseholdId = household.Id });
-        else
-            m.HouseholdId = household.Id;
-        await _db.SaveChangesAsync(ct);
-
-        int count = await _db.Members.CountAsync(x => x.HouseholdId == household.Id, ct);
-        return $"Готово! Вы в общем домохозяйстве {household.Code}. Участников: {count}. Блюда и запасы теперь общие.";
-    }
-
     private static string Welcome(Member m) =>
         $"Привет, {m.Name}! Я помогу считать калории и решать, что приготовить.\n" +
         $"Код вашего домохозяйства: {m.Household!.Code}\n" +
@@ -143,28 +108,25 @@ public class CommandHandler
         "/food название ккал белки жиры углеводы [цена] — добавить новый продукт (значения на 100 г)\n" +
         "/join КОД — присоединиться к домохозяйству партнёра";
 
-    private async Task<string> AddFoodAsync(string arg, IReadOnlyList<Food> foods, CancellationToken ct)
+    private async Task<string> AddFoodAsync(string arg, CancellationToken ct)
     {
         var m = FoodRx.Match(arg.Trim());
         if (!m.Success)
             return "Формат: /food название ккал белки жиры углеводы [цена за 100 г]\nНапример: /food Сыр фета 264 14 21 4 1.2";
 
-        string name = m.Groups["name"].Value.Trim();
-        var existing = foods.FirstOrDefault(f => FoodMatcher.Normalize(f.Name) == FoodMatcher.Normalize(name));
-
-        var food = existing is null
-            ? new Food { Name = name, Category = "Свои продукты", MaxGrams = 400 }
-            : await _db.Foods.FirstAsync(f => f.Id == existing.Id, ct);
-
-        food.KcalPer100 = ParseNum(m.Groups["k"].Value);
-        food.ProteinPer100 = ParseNum(m.Groups["p"].Value);
-        food.FatPer100 = ParseNum(m.Groups["f"].Value);
-        food.CarbsPer100 = ParseNum(m.Groups["c"].Value);
-        food.PricePer100 = m.Groups["price"].Success ? ParseNum(m.Groups["price"].Value) : (existing?.PricePer100 ?? 0.3);
-
-        if (existing is null) _db.Foods.Add(food);
-        await _db.SaveChangesAsync(ct);
-        return existing is null ? $"Продукт «{name}» добавлен." : $"Продукт «{name}» обновлён.";
+        var values = new Food
+        {
+            Name = m.Groups["name"].Value.Trim(),
+            Category = FoodRepository.CustomCategory,
+            MaxGrams = FoodRepository.DefaultMaxGrams,
+            KcalPer100 = ParseNum(m.Groups["k"].Value),
+            ProteinPer100 = ParseNum(m.Groups["p"].Value),
+            FatPer100 = ParseNum(m.Groups["f"].Value),
+            CarbsPer100 = ParseNum(m.Groups["c"].Value),
+            PricePer100 = m.Groups["price"].Success ? ParseNum(m.Groups["price"].Value) : FoodRepository.DefaultPrice
+        };
+        var (_, created) = await _s.Foods.UpsertAsync(values, ct);
+        return created ? $"Продукт «{values.Name}» добавлен." : $"Продукт «{values.Name}» обновлён.";
     }
 
     private static string DescribeParseProblems(ParsedDish p)
@@ -185,59 +147,25 @@ public class CommandHandler
     private static string Nutr(Nutrients n) =>
         $"{n.Kcal:F0} ккал, Б {n.Protein:F0} / Ж {n.Fat:F0} / У {n.Carbs:F0}";
 
-    private string Calc(string arg, IReadOnlyList<Food> foods)
+    private static string Calc(string arg, IReadOnlyList<Food> foods)
     {
         var p = DishParser.Parse(arg, foods);
-        if (!p.IsValid) return DescribeParseProblems(p);
-        return $"«{p.Name}»\n" + Describe(new Dish(p.Name, p.Servings, p.Ingredients));
+        return p.IsValid ? $"«{p.Name}»\n" + Describe(new Dish(p.Name, p.Servings, p.Ingredients)) : DescribeParseProblems(p);
     }
 
-    private async Task<string> AddDishAsync(Member member, string arg, IReadOnlyList<Food> foods, CancellationToken ct)
+    private async Task<string> AddDishAsync(Call call, CancellationToken ct)
     {
-        var p = DishParser.Parse(arg, foods);
+        var p = DishParser.Parse(call.Arg, call.Foods);
         if (!p.IsValid) return DescribeParseProblems(p);
-
-        var old = await _db.Dishes
-            .Where(d => d.HouseholdId == member.HouseholdId)
-            .ToListAsync(ct);
-        var same = old.FirstOrDefault(d => d.Name.Equals(p.Name, StringComparison.CurrentCultureIgnoreCase));
-        if (same != null) _db.Dishes.Remove(same);
-
-        _db.Dishes.Add(new HouseholdDish
-        {
-            HouseholdId = member.HouseholdId,
-            Name = p.Name,
-            Servings = p.Servings,
-            Ingredients = p.Ingredients
-                .GroupBy(i => i.Food.Id)
-                .Select(g => new HouseholdDishIngredient { FoodId = g.Key, Grams = g.Sum(i => i.Grams) })
-                .ToList()
-        });
-        await _db.SaveChangesAsync(ct);
 
         var dish = new Dish(p.Name, p.Servings, p.Ingredients);
-        return $"Блюдо «{p.Name}» сохранено" + (same != null ? " (заменило прежнее)" : "") + ".\n" + Describe(dish);
+        bool replaced = await _s.Dishes.SaveAsync(call.Member.HouseholdId, dish, ct);
+        return $"Блюдо «{p.Name}» сохранено" + (replaced ? " (заменило прежнее)" : "") + ".\n" + Describe(dish);
     }
 
-    internal async Task<List<(HouseholdDish Entity, Dish Model)>> LoadDishesAsync(
-        int householdId, IReadOnlyList<Food> foods, CancellationToken ct)
+    private async Task<string> ListDishesAsync(Call call, CancellationToken ct)
     {
-        var map = foods.ToDictionary(f => f.Id);
-        var entities = await _db.Dishes.AsNoTracking()
-            .Include(d => d.Ingredients)
-            .Where(d => d.HouseholdId == householdId)
-            .OrderBy(d => d.Id)
-            .ToListAsync(ct);
-
-        return entities
-            .Select(e => (e, new Dish(e.Name, e.Servings,
-                e.Ingredients.Select(i => new DishIngredient(map[i.FoodId], i.Grams)).ToList(), e.CookMinutes, e.Difficulty)))
-            .ToList();
-    }
-
-    private async Task<string> ListDishesAsync(Member member, IReadOnlyList<Food> foods, CancellationToken ct)
-    {
-        var dishes = await LoadDishesAsync(member.HouseholdId, foods, ct);
+        var dishes = await _s.Dishes.ListAsync(call.Member.HouseholdId, call.Foods, ct);
         if (dishes.Count == 0) return "Блюд пока нет. Добавьте: /dish борщ: свёкла 200, картофель 300; 4 порции";
 
         var sb = new StringBuilder("Ваши блюда:\n");
@@ -249,31 +177,28 @@ public class CommandHandler
         return sb.ToString().TrimEnd();
     }
 
-    private async Task<string> DeleteDishAsync(Member member, string arg, CancellationToken ct)
+    private async Task<string> DeleteDishAsync(Call call, CancellationToken ct)
     {
-        if (!int.TryParse(arg.Trim(), out int n) || n < 1) return "Укажите номер блюда из /dishes, например: /delete 2";
+        if (!int.TryParse(call.Arg.Trim(), out int n) || n < 1) return "Укажите номер блюда из /dishes, например: /delete 2";
 
-        var list = await _db.Dishes.Where(d => d.HouseholdId == member.HouseholdId).OrderBy(d => d.Id).ToListAsync(ct);
-        if (n > list.Count) return "Блюда с таким номером нет.";
+        var dishes = await _s.Dishes.ListAsync(call.Member.HouseholdId, call.Foods, ct);
+        if (n > dishes.Count) return "Блюда с таким номером нет.";
 
-        string name = list[n - 1].Name;
-        _db.Dishes.Remove(list[n - 1]);
-        await _db.SaveChangesAsync(ct);
+        string? name = await _s.Dishes.DeleteAsync(call.Member.HouseholdId, dishes[n - 1].Entity.Id, ct);
         return $"Блюдо «{name}» удалено.";
     }
 
-    private async Task<string> ChangePantryAsync(
-        Member member, string arg, IReadOnlyList<Food> foods, bool replace, CancellationToken ct)
+    private async Task<string> ChangePantryAsync(Call call, bool replace, CancellationToken ct)
     {
-        if (arg.Trim().Equals("clear", StringComparison.OrdinalIgnoreCase) ||
-            arg.Trim().Equals("очистить", StringComparison.OrdinalIgnoreCase))
+        string arg = call.Arg.Trim();
+        int householdId = call.Member.HouseholdId;
+        if (arg.Equals("clear", StringComparison.OrdinalIgnoreCase) || arg.Equals("очистить", StringComparison.OrdinalIgnoreCase))
         {
-            _db.Pantry.RemoveRange(_db.Pantry.Where(p => p.HouseholdId == member.HouseholdId));
-            await _db.SaveChangesAsync(ct);
+            await _s.Pantry.ClearAsync(householdId, ct);
             return "Запасы очищены.";
         }
 
-        var parsed = DishParser.ParseItems(arg, foods);
+        var parsed = DishParser.ParseItems(arg, call.Foods);
         var problems = new StringBuilder();
         foreach (var e in parsed.Errors) problems.AppendLine("• " + e);
         if (parsed.UnknownFoods.Count > 0)
@@ -281,71 +206,40 @@ public class CommandHandler
         if (parsed.Items.Count == 0)
             return problems.Length > 0 ? problems.ToString().TrimEnd() : "Формат: /have курица 500, рис 300";
 
-        var entries = await _db.Pantry.Where(p => p.HouseholdId == member.HouseholdId).ToListAsync(ct);
-        foreach (var item in parsed.Items)
-        {
-            var entry = entries.FirstOrDefault(e => e.FoodId == item.Food.Id);
-            if (entry is null)
-            {
-                entry = new PantryEntry { HouseholdId = member.HouseholdId, FoodId = item.Food.Id, Grams = 0 };
-                _db.Pantry.Add(entry);
-                entries.Add(entry);
-            }
-            entry.Grams = replace ? item.Grams : entry.Grams + item.Grams;
-        }
-        foreach (var stale in entries.Where(x => x.Grams <= 0).ToList())
-        {
-            if (_db.Entry(stale).State == EntityState.Added) _db.Entry(stale).State = EntityState.Detached;
-            else _db.Pantry.Remove(stale);
-        }
-        await _db.SaveChangesAsync(ct);
+        await _s.Pantry.ChangeAsync(householdId, parsed.Items.Select(i => (i.Food.Id, i.Grams)), replace, ct);
 
         string summary = string.Join(", ", parsed.Items.Select(i => $"{i.Food.Name} {i.Grams:F0} г"));
         return (replace ? "Установлено: " : "Добавлено: ") + summary +
                (problems.Length > 0 ? "\n\nНе удалось:\n" + problems.ToString().TrimEnd() : string.Empty);
     }
 
-    private async Task<string> ShowPantryAsync(Member member, CancellationToken ct)
+    private async Task<string> ShowPantryAsync(Call call, CancellationToken ct)
     {
-        var entries = await _db.Pantry.AsNoTracking().Include(p => p.Food)
-            .Where(p => p.HouseholdId == member.HouseholdId && p.Grams > 0)
-            .OrderBy(p => p.Food!.Name).ToListAsync(ct);
-        if (entries.Count == 0) return "Запасов пока нет. Добавьте: /have курица 500, рис 300";
-
-        return "Запасы:\n" + string.Join("\n", entries.Select(e => $"• {e.Food!.Name} — {e.Grams:F0} г"));
+        var entries = await _s.Pantry.ListAsync(call.Member.HouseholdId, ct);
+        return entries.Count == 0
+            ? "Запасов пока нет. Добавьте: /have курица 500, рис 300"
+            : "Запасы:\n" + string.Join("\n", entries.Select(e => $"• {e.Food!.Name} — {e.Grams:F0} г"));
     }
 
-    private async Task<Dictionary<int, double>> LoadPantryAsync(int householdId, CancellationToken ct) =>
-        await _db.Pantry.AsNoTracking()
-            .Where(p => p.HouseholdId == householdId && p.Grams > 0)
-            .ToDictionaryAsync(p => p.FoodId, p => p.Grams, ct);
-
-    private async Task<string> CookedAsync(Member member, string arg, IReadOnlyList<Food> foods, CancellationToken ct)
+    private async Task<string> CookedAsync(Call call, CancellationToken ct)
     {
-        var parts = arg.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var parts = call.Arg.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length == 0 || !int.TryParse(parts[0], out int n) || n < 1)
             return "Укажите номер блюда из /dishes: /cooked 2 [сколько порций]";
 
-        var dishes = await LoadDishesAsync(member.HouseholdId, foods, ct);
+        var dishes = await _s.Dishes.ListAsync(call.Member.HouseholdId, call.Foods, ct);
         if (n > dishes.Count) return "Блюда с таким номером нет.";
         var dish = dishes[n - 1].Model;
 
         double portions = dish.Servings;
-        if (parts.Length > 1 && double.TryParse(parts[1].Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var p) && p > 0)
-            portions = p;
-        double k = portions / dish.Servings;
+        if (parts.Length > 1 && TryParsePositive(parts[1], out var custom)) portions = custom;
 
-        var entries = await _db.Pantry.Where(e => e.HouseholdId == member.HouseholdId).ToListAsync(ct);
-        foreach (var ing in dish.Ingredients)
-        {
-            var entry = entries.FirstOrDefault(e => e.FoodId == ing.Food.Id);
-            if (entry is null) continue;
-            entry.Grams -= ing.Grams * k;
-            if (entry.Grams <= 0) _db.Pantry.Remove(entry);
-        }
-        await _db.SaveChangesAsync(ct);
+        await _s.Pantry.ConsumeAsync(call.Member.HouseholdId, dish, portions, ct);
         return $"Списано с запасов: «{dish.Name}», {portions:0.#} порц. Приятного аппетита!";
     }
+
+    private static bool TryParsePositive(string text, out double value) =>
+        double.TryParse(text.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out value) && value > 0;
 
     private static string DescribeRecommendation(int index, DishRecommendation r)
     {
@@ -360,13 +254,13 @@ public class CommandHandler
                $" (≈ {r.Coverage.MissingCost:F2} €)";
     }
 
-    private async Task<string> CookAsync(Member member, string arg, IReadOnlyList<Food> foods, CancellationToken ct)
+    private async Task<string> CookAsync(Call call, CancellationToken ct)
     {
-        var dishes = (await LoadDishesAsync(member.HouseholdId, foods, ct)).Select(d => d.Model).ToList();
+        var dishes = (await _s.Dishes.ListAsync(call.Member.HouseholdId, call.Foods, ct)).Select(d => d.Model).ToList();
         if (dishes.Count == 0) return "У вас пока нет сохранённых блюд. Добавьте через /dish или попросите /idea.";
 
-        double? target = double.TryParse(arg.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var t) && t > 0 ? t : null;
-        var pantry = await LoadPantryAsync(member.HouseholdId, ct);
+        double? target = TryParsePositive(call.Arg, out var t) ? t : null;
+        var pantry = await _s.Pantry.LoadAsync(call.Member.HouseholdId, ct);
         if (pantry.Count == 0)
             return "Запасов нет, поэтому сравнивать не с чем. Добавьте продукты: /have курица 500, рис 300 — или попросите /idea.";
 
@@ -376,12 +270,12 @@ public class CommandHandler
         return sb.ToString().TrimEnd();
     }
 
-    private async Task<string> IdeaAsync(Member member, IReadOnlyList<Food> foods, CancellationToken ct)
+    private async Task<string> IdeaAsync(Call call, CancellationToken ct)
     {
-        var own = (await LoadDishesAsync(member.HouseholdId, foods, ct)).Select(d => d.Model).ToList();
-        var pool = own.Concat(TemplateDishes.Build(foods)
+        var own = (await _s.Dishes.ListAsync(call.Member.HouseholdId, call.Foods, ct)).Select(d => d.Model).ToList();
+        var pool = own.Concat(TemplateDishes.Build(call.Foods)
             .Where(t => !own.Any(o => o.Name.Equals(t.Name, StringComparison.CurrentCultureIgnoreCase)))).ToList();
-        var pantry = await LoadPantryAsync(member.HouseholdId, ct);
+        var pantry = await _s.Pantry.LoadAsync(call.Member.HouseholdId, ct);
 
         IDishRecommender rec = pantry.Count > 0 ? new SmartRecommender() : new RandomRecommender(Random.Shared.Next());
         var top = rec.Recommend(pool, pantry, new RecommendationContext(), 3);
@@ -396,14 +290,13 @@ public class CommandHandler
         return sb.ToString();
     }
 
-    private async Task<string> MenuAsync(Member member, string arg, IReadOnlyList<Food> foods, CancellationToken ct)
+    private async Task<string> MenuAsync(Call call, CancellationToken ct)
     {
-        double kcal = double.TryParse(arg.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var k) && k >= 800 && k <= 6000
-            ? k : 2000;
+        double kcal = TryParsePositive(call.Arg, out var k) && k is >= 800 and <= 6000 ? k : 2000;
         var targets = NutrientTargets.ForKcal(kcal);
 
-        var pantry = await LoadPantryAsync(member.HouseholdId, ct);
-        var limited = foods.Where(f => pantry.ContainsKey(f.Id))
+        var pantry = await _s.Pantry.LoadAsync(call.Member.HouseholdId, ct);
+        var limited = call.Foods.Where(f => pantry.ContainsKey(f.Id))
             .Select(f => new Food
             {
                 Id = f.Id, Name = f.Name, Category = f.Category,
@@ -420,7 +313,7 @@ public class CommandHandler
                 return $"Меню на день из ваших запасов (≈ {kcal:F0} ккал):\n" + FormatPlan(plan);
         }
 
-        var full = planner.Plan(foods, targets);
+        var full = planner.Plan(call.Foods, targets);
         if (!full.IsFeasible) return "Не удалось подобрать меню под такие ограничения. Попробуйте другую калорийность.";
 
         var buy = full.Items
