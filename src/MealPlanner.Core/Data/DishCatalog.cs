@@ -7,11 +7,12 @@ namespace MealPlanner.Core.Data;
 public record CatalogDish(string Category, Dish Dish);
 
 /// <summary>
-/// Built-in dish database: category, name, time, difficulty, servings and composition with ingredient mass
+/// Built-in dish database; row format: category|name|minutes|difficulty|servings|product:grams;next|step#step
 /// </summary>
 public static class DishCatalog
 {
-    private record Raw(string Category, string Name, int Minutes, int Difficulty, int Servings, IReadOnlyList<(string Product, double Grams)> Items);
+    private record Raw(string Category, string Name, int Minutes, int Difficulty, int Servings,
+        IReadOnlyList<(string Product, double Grams)> Items, string Instructions);
 
     private static readonly Lazy<IReadOnlyList<Raw>> Definitions = new(LoadRaw);
 
@@ -33,7 +34,7 @@ public static class DishCatalog
                 if (map.TryGetValue(FoodMatcher.Normalize(product), out var food))
                     ingredients.Add(new DishIngredient(food, grams));
             if (ingredients.Count == raw.Items.Count)
-                result.Add(new CatalogDish(raw.Category, new Dish(raw.Name, raw.Servings, ingredients, raw.Minutes, raw.Difficulty)));
+                result.Add(new CatalogDish(raw.Category, new Dish(raw.Name, raw.Servings, ingredients, raw.Minutes, raw.Difficulty, raw.Instructions)));
         }
         return result;
     }
@@ -51,14 +52,15 @@ public static class DishCatalog
         foreach (var line in FoodCatalog.ReadResource("dishes.txt").Split('\n', StringSplitOptions.RemoveEmptyEntries))
         {
             var p = line.Trim().Split('|');
-            if (p.Length != 6) continue;
+            if (p.Length < 6) continue;
             var items = p[5].Split(';', StringSplitOptions.RemoveEmptyEntries).Select(x =>
             {
                 int i = x.LastIndexOf(':');
                 return (x[..i], double.Parse(x[(i + 1)..], CultureInfo.InvariantCulture));
             }).ToList();
             list.Add(new Raw(p[0], p[1], int.Parse(p[2], CultureInfo.InvariantCulture), int.Parse(p[3], CultureInfo.InvariantCulture),
-                int.Parse(p[4], CultureInfo.InvariantCulture), items));
+                int.Parse(p[4], CultureInfo.InvariantCulture), items,
+                p.Length > 6 ? string.Join('\n', p[6].Split('#', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)) : string.Empty));
         }
         return list;
     }

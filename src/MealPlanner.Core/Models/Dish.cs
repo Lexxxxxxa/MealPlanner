@@ -7,10 +7,16 @@ public record DishIngredient(Food Food, double Grams)
 }
 
 /// <summary>
-/// Dish: name, servings, ingredients with mass, cooking time (minutes) and difficulty (1 easy, 2 medium, 3 hard)
+/// Dish: name, servings, ingredients with mass, cooking time (minutes), difficulty (1 easy, 2 medium, 3 hard)
+/// and step-by-step instructions (steps are separated by line breaks)
 /// </summary>
-public record Dish(string Name, int Servings, IReadOnlyList<DishIngredient> Ingredients, int CookMinutes = 30, int Difficulty = 2)
+public record Dish(
+    string Name, int Servings, IReadOnlyList<DishIngredient> Ingredients,
+    int CookMinutes = 30, int Difficulty = 2, string Instructions = "")
 {
+    public IReadOnlyList<string> Steps =>
+        InstructionText.Split(Instructions);
+
     public Nutrients Total => Ingredients.Aggregate(Nutrients.Zero, (acc, i) => acc + i.Nutrients);
     public Nutrients PerServing => Total * (1.0 / Math.Max(1, Servings));
     public double Cost => Ingredients.Sum(i => i.Cost);
