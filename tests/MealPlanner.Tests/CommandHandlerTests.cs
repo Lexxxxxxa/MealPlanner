@@ -1,3 +1,4 @@
+using MealPlanner.App.Services;
 using System.Text.RegularExpressions;
 using MealPlanner.App.Bot;
 using MealPlanner.App.Data;
@@ -19,8 +20,8 @@ public sealed class BotFixture : IDisposable
         _connection.Open();
         var options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options;
         Db = new AppDbContext(options);
-        AppDbContext.Initialize(Db);
-        Bot = new CommandHandler(Db);
+        DatabaseInitializer.Run(Db);
+        Bot = new CommandHandler(AppServices.Create(Db));
     }
 
     public Task<string> Say(long user, string text) => Bot.HandleAsync(user, $"user{user}", text);

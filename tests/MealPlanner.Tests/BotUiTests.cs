@@ -1,4 +1,5 @@
 using MealPlanner.App.Bot;
+using MealPlanner.Core.Recommendation;
 using MealPlanner.App.Data;
 using MealPlanner.Core.Data;
 using MealPlanner.Core.Models;
@@ -53,6 +54,7 @@ public class BotUiTests
         await ui.Tap(Alice, "a:s:1");
         await ui.Tap(Alice, $"a:tm:{minutes}");
         await ui.Tap(Alice, $"a:df:{difficulty}");
+        await ui.Tap(Alice, "a:skip");
     }
 
     [Fact]
@@ -88,7 +90,8 @@ public class BotUiTests
         var difficulty = await ui.Tap(Alice, "a:tm:20");
         Assert.True(HasButton(difficulty, "a:df:1"));
 
-        var saved = await ui.Tap(Alice, "a:df:1");
+        var recipe = await ui.Tap(Alice, "a:df:1");
+        var saved = await ui.Tap(Alice, "a:skip");
         Assert.Contains("сохранено", saved.Text);
         Assert.Contains("20 мин", saved.Text);
         Assert.Contains("легко", saved.Text);
@@ -381,7 +384,7 @@ public class BotUiTests
         fx.Db.Database.ExecuteSqlRaw("DROP TABLE \"DiaryEntries\"");
         fx.Db.Database.ExecuteSqlRaw("DROP TABLE \"MemberTargets\"");
 
-        AppDbContext.Initialize(fx.Db);
+        DatabaseInitializer.Run(fx.Db);
 
         fx.Db.DiaryEntries.Add(new DiaryEntry { MemberId = 1, Date = new DateOnly(2026, 11, 23), Label = "x", Kcal = 1 });
         fx.Db.SaveChanges();
@@ -516,8 +519,8 @@ public class BotUiTests
         var remaining = new Nutrients(600, 40, 20, 70);
         var close = new Nutrients(580, 38, 18, 68);
         var heavy = new Nutrients(580, 10, 60, 40);
-        Assert.True(BotUi.FitScore(close, remaining) < BotUi.FitScore(heavy, remaining));
-        Assert.True(BotUi.FitScore(close, remaining) < BotUi.FitScore(new Nutrients(200, 10, 5, 25), remaining));
+        Assert.True(PortionFit.Score(close, remaining) < PortionFit.Score(heavy, remaining));
+        Assert.True(PortionFit.Score(close, remaining) < PortionFit.Score(new Nutrients(200, 10, 5, 25), remaining));
     }
 
     [Fact]
@@ -527,7 +530,7 @@ public class BotUiTests
         fx.Db.Database.ExecuteSqlRaw("ALTER TABLE \"Dishes\" RENAME TO \"DishesOld\"");
         fx.Db.Database.ExecuteSqlRaw("CREATE TABLE \"Dishes\" (\"Id\" INTEGER PRIMARY KEY AUTOINCREMENT, \"HouseholdId\" INTEGER NOT NULL, \"Name\" TEXT NOT NULL, \"Servings\" INTEGER NOT NULL)");
 
-        AppDbContext.Initialize(fx.Db);
+        DatabaseInitializer.Run(fx.Db);
 
         fx.Db.Database.ExecuteSqlRaw("INSERT INTO \"Dishes\" (\"HouseholdId\", \"Name\", \"Servings\") VALUES (1, 'x', 1)");
         Assert.Equal(30, fx.Db.Dishes.AsNoTracking().Single().CookMinutes);
@@ -554,7 +557,7 @@ public class BotUiTests
         fx.Db.Foods.Remove(trout);
         await fx.Db.SaveChangesAsync();
 
-        AppDbContext.Initialize(fx.Db);
+        DatabaseInitializer.Run(fx.Db);
 
         Assert.Equal(1, await fx.Db.Foods.CountAsync(f => f.Name == "Форель"));
     }
@@ -611,7 +614,7 @@ public class BotUiTests
     public void CategoryLabels_HaveIcons()
     {
         foreach (var c in DishCatalog.Categories)
-            Assert.DoesNotContain("🍴", BotUi.LabelFor(c));
+            Assert.DoesNotContain("🍴", UiKit.CatLabel(c));
     }
 
     [Fact]
