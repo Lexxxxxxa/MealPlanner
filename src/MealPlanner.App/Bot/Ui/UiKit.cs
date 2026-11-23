@@ -45,7 +45,7 @@ public static class UiKit
         (CategoryEmoji.TryGetValue(cat, out var e) ? e : "🍴") + " " + cat;
 
     public static List<IReadOnlyList<InlineButton>> Rows(IEnumerable<InlineButton> buttons, int perRow) =>
-        Grid(buttons, perRow).ToList();
+        buttons.Chunk(perRow).Select(chunk => (IReadOnlyList<InlineButton>)chunk.ToList()).ToList();
 
     public static IReadOnlyList<InlineButton> Row(params InlineButton[] b) => b.ToList();
 
